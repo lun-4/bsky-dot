@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -22,7 +23,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
-	"gorgonia.org/tensor"
+	_ "gorgonia.org/tensor"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -89,6 +90,7 @@ type State struct {
 	processedCounter LockedInt
 	postCounter      LockedInt
 	ctx              context.Context
+	db               *sql.DB
 }
 
 func eventMetrics(state *State) {
@@ -195,10 +197,6 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 	ctx := context.Background()
-	state := State{
-		cfg: cfg,
-		ctx: ctx,
-	}
 	db, err := sql.Open("sqlite3", cfg.databasePath)
 	if err != nil {
 		log.Fatal(err)
@@ -208,9 +206,18 @@ func main() {
 	// TODO rest of tables
 	_, err = db.Exec(`
 	PRAGMA journal_mode=WAL;
+	CREATE TABLE IF NOT EXISTS original_embeddings (
+		post text primary key,
+		embedding text -- json encoded
+	) STRICT;
 	`)
 	if err != nil {
 		panic(err)
+	}
+	state := State{
+		cfg: cfg,
+		ctx: ctx,
+		db:  db,
 	}
 
 	switch arg {
@@ -226,6 +233,48 @@ func main() {
 type TweetEvalRow struct {
 	Text  *string `parquet:"name=text, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Label *int64  `parquet:"name=label, type=INT64"`
+}
+
+func getUpstreamEmbedding(client http.Client, text string) []float64 {
+
+	body := map[string]any{
+		"content": text,
+	}
+	encodedBody, err := json.Marshal(body)
+	if err != nil {
+		panic(err)
+	}
+	req, err := http.NewRequest("POST", "http://kotys:4575/embedding", bytes.NewReader(encodedBody))
+	if err != nil {
+		panic(err)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	responseBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		slog.Error("HTTP error", slog.Int("status", res.StatusCode), slog.String("response", string(responseBytes)))
+		panic("http status")
+	}
+
+	var resJson map[string]any
+	err = json.Unmarshal(responseBytes, &resJson)
+	if err != nil {
+		panic(err)
+	}
+	embeddingAny := resJson["embedding"].([]any)
+	embedding := make([]float64, len(embeddingAny))
+	for i, item := range embeddingAny {
+		value := item.(float64)
+		embedding[i] = value
+	}
+	return embedding
+
 }
 
 func embedEverything(state *State, cfg Config) {
@@ -251,46 +300,33 @@ func embedEverything(state *State, cfg Config) {
 			text := *row.Text
 			label := *row.Label
 			fmt.Println(label, text)
-			body := map[string]any{
-				"content": text,
-			}
-			encodedBody, err := json.Marshal(body)
-			if err != nil {
+			row := state.db.QueryRow("SELECT embedding FROM original_embeddings WHERE post=?", text)
+			var databaseEmbedding string
+			var embedding []float64
+			err := row.Scan(&databaseEmbedding)
+			if errors.Is(err, sql.ErrNoRows) {
+				// get embedding from upstream llama.cpp
+				embedding = getUpstreamEmbedding(cli, text)
+				data, err := json.Marshal(embedding)
+				if err != nil {
+					panic(err)
+				}
+				_, err = state.db.Exec("INSERT INTO original_embeddings (post, embedding) VALUES (?, ?)", text, string(data))
+				if err != nil {
+					panic(err)
+				}
+			} else if err != nil {
 				panic(err)
+			} else {
+				err := json.Unmarshal([]byte(databaseEmbedding), &embedding)
+				if err != nil {
+					panic(err)
+				}
 			}
-			req, err := http.NewRequest("POST", "http://kotys:4575/embedding", bytes.NewReader(encodedBody))
-			if err != nil {
-				panic(err)
-			}
-			res, err := cli.Do(req)
-			if err != nil {
-				panic(err)
-			}
-			responseBytes, err := io.ReadAll(res.Body)
-			if err != nil {
-				panic(err)
-			}
-
-			if res.StatusCode != http.StatusOK {
-				slog.Error("HTTP error", slog.Int("status", res.StatusCode), slog.String("response", string(responseBytes)))
-				panic("http status")
-			}
-
-			var resJson map[string]any
-			err = json.Unmarshal(responseBytes, &resJson)
-			if err != nil {
-				panic(err)
-			}
-			embeddingAny := resJson["embedding"].([]any)
-			embedding := make([]float64, len(embeddingAny))
-			for _, item := range embeddingAny {
-				itemF := item.(float64)
-				embedding = append(embedding, itemF)
-			}
-			embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
-
-			fmt.Println(embeddingT)
-
+			// faster
+			//embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
+			// faster
+			//fmt.Println(embeddingT)
 		}
 	}
 	pr.ReadStop()
