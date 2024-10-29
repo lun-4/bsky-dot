@@ -175,7 +175,7 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 	events.HandleRepoStream(state.ctx, con, sched)
 }
 
-func eventProcessor(state *State, eventChannel <-chan string) {
+func eventProcessor(state *State, eventChannel <-chan string, sentimentChannel chan string) {
 	primaryEmbeddings := make(map[string]tensor.Tensor)
 	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
 	if err != nil {
@@ -206,15 +206,21 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 		slog.Debug("processing event", slog.String("text", text))
 		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, text)
 		embeddingT := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(embeddingData))
-		fmt.Println(text)
+		maxLabel, maxDistance := "", math.Inf(1)
+		//fmt.Println(text)
 		for label, primaryEmbedding := range primaryEmbeddings {
 			distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
 			if err != nil {
 				panic(err)
 			}
-			fmt.Println(label, distance)
+			if distance < maxDistance {
+				maxLabel = label
+				maxDistance = distance
+			}
+			//fmt.Println(label, distance)
 		}
 
+		sentimentChannel <- maxLabel
 		func() {
 			state.processedCounter.Lock()
 			defer state.processedCounter.Unlock()
@@ -461,8 +467,26 @@ func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tens
 	}
 }
 
+func sentimentProcessor(state *State, sentimentChannel <-chan string) {
+	sentimentCounters := make(map[string]uint)
+	ticker := time.Tick(time.Second)
+	for {
+		select {
+		case sentiment := <-sentimentChannel:
+			sentimentCounters[sentiment]++
+		case <-ticker:
+			for sentiment, count := range sentimentCounters {
+				fmt.Println(sentiment, count)
+			}
+
+		}
+	}
+
+}
+
 func run(state *State, cfg Config) {
 	eventChannel := make(chan string, 1000)
+	sentimentChannel := make(chan string, 1000)
 
 	if cfg.upstreamType == UpstreamType_BLUESKY {
 		go blueskyUpstream(state, eventChannel)
@@ -471,7 +495,8 @@ func run(state *State, cfg Config) {
 	}
 
 	go eventMetrics(state)
-	go eventProcessor(state, eventChannel)
+	go eventProcessor(state, eventChannel, sentimentChannel)
+	go sentimentProcessor(state, sentimentChannel)
 
 	e := echo.New()
 
