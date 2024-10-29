@@ -5,19 +5,30 @@ go 1.23.2
 require (
 	github.com/bluesky-social/indigo v0.0.0-20241008040750-06bacb465af7
 	github.com/gorilla/websocket v1.5.3
+	github.com/labstack/echo/v4 v4.12.0
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/xitongsys/parquet-go v1.6.2
+	github.com/xitongsys/parquet-go-source v0.0.0-20200817004010-026bad9b25d0
+	gorgonia.org/tensor v0.9.24
 )
 
 require (
 	github.com/RussellLuo/slidingwindow v0.0.0-20200528002341-535bb99d338b // indirect
+	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
+	github.com/apache/thrift v0.21.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/carlmjohnson/versioninfo v0.22.5 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/chewxy/hm v1.0.0 // indirect
+	github.com/chewxy/math32 v1.0.8 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
+	github.com/google/flatbuffers v2.0.0+incompatible // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
@@ -53,12 +64,11 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
-	github.com/labstack/echo/v4 v4.12.0 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
@@ -70,6 +80,8 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
+	github.com/pierrec/lz4/v4 v4.1.21 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
 	github.com/prometheus/client_golang v1.20.5 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
@@ -80,6 +92,7 @@ require (
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
 	github.com/whyrusleeping/cbor-gen v0.2.0 // indirect
+	github.com/xtgo/set v1.0.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.56.0 // indirect
 	go.opentelemetry.io/otel v1.31.0 // indirect
 	go.opentelemetry.io/otel/metric v1.31.0 // indirect
@@ -87,6 +100,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
+	go4.org/unsafe/assume-no-moving-gc v0.0.0-20220617031537-928513b29760 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
 	golang.org/x/net v0.29.0 // indirect
@@ -95,7 +109,10 @@ require (
 	golang.org/x/text v0.19.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
+	gonum.org/v1/gonum v0.9.3 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
+	gorgonia.org/vecf32 v0.9.0 // indirect
+	gorgonia.org/vecf64 v0.9.0 // indirect
 	gorm.io/driver/postgres v1.5.9 // indirect
 	gorm.io/gorm v1.25.12 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect

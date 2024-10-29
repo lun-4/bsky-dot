@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,9 @@ import (
 	"github.com/bluesky-social/indigo/events/schedulers/sequential"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/gorilla/websocket"
+	"github.com/xitongsys/parquet-go-source/local"
+	"github.com/xitongsys/parquet-go/reader"
+	"gorgonia.org/tensor"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -183,6 +187,10 @@ func main() {
 		debug:        os.Getenv("DEBUG") != "",
 	}
 	cfg.Defaults()
+	if len(os.Args) < 2 {
+		panic("need more args")
+	}
+	arg := os.Args[1]
 	if cfg.debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
@@ -205,14 +213,101 @@ func main() {
 		panic(err)
 	}
 
+	switch arg {
+	case "embed-everything":
+		embedEverything(&state, cfg)
+	case "run":
+		run(&state, cfg)
+	default:
+		fmt.Println("Usage: bskydot [embed-everything | run]")
+	}
+}
+
+type TweetEvalRow struct {
+	Text  *string `parquet:"name=text, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
+	Label *int64  `parquet:"name=label, type=INT64"`
+}
+
+func embedEverything(state *State, cfg Config) {
+	fr, err := local.NewLocalFileReader("dataset/train.parquet")
+	if err != nil {
+		panic(err)
+	}
+
+	pr, err := reader.NewParquetReader(fr, new(TweetEvalRow), 4)
+	if err != nil {
+		panic(err)
+	}
+
+	cli := http.Client{}
+	num := int(pr.GetNumRows())
+	for i := 0; i < num; i++ {
+		stus := make([]TweetEvalRow, 1)
+		if err = pr.Read(&stus); err != nil {
+			slog.Error("Read error", slog.String("err", err.Error()))
+			panic(err)
+		}
+		for _, row := range stus {
+			text := *row.Text
+			label := *row.Label
+			fmt.Println(label, text)
+			body := map[string]any{
+				"content": text,
+			}
+			encodedBody, err := json.Marshal(body)
+			if err != nil {
+				panic(err)
+			}
+			req, err := http.NewRequest("POST", "http://kotys:4575/embedding", bytes.NewReader(encodedBody))
+			if err != nil {
+				panic(err)
+			}
+			res, err := cli.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			responseBytes, err := io.ReadAll(res.Body)
+			if err != nil {
+				panic(err)
+			}
+
+			if res.StatusCode != http.StatusOK {
+				slog.Error("HTTP error", slog.Int("status", res.StatusCode), slog.String("response", string(responseBytes)))
+				panic("http status")
+			}
+
+			var resJson map[string]any
+			err = json.Unmarshal(responseBytes, &resJson)
+			if err != nil {
+				panic(err)
+			}
+			embeddingAny := resJson["embedding"].([]any)
+			embedding := make([]float64, len(embeddingAny))
+			for _, item := range embeddingAny {
+				itemF := item.(float64)
+				embedding = append(embedding, itemF)
+			}
+			embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
+
+			fmt.Println(embeddingT)
+
+		}
+	}
+	pr.ReadStop()
+	fr.Close()
+}
+
+func run(state *State, cfg Config) {
 	eventChannel := make(chan string, 1000)
 
 	if cfg.upstreamType == UpstreamType_BLUESKY {
-		go blueskyUpstream(&state, eventChannel)
+		go blueskyUpstream(state, eventChannel)
+	} else {
+		panic("unsupported upstream type. this is a bug")
 	}
 
-	go eventMetrics(&state)
-	go eventProcessor(&state, eventChannel)
+	go eventMetrics(state)
+	go eventProcessor(state, eventChannel)
 
 	e := echo.New()
 
