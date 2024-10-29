@@ -22,6 +22,7 @@ import (
 	"github.com/bluesky-social/indigo/events/schedulers/sequential"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/gorilla/websocket"
+	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 	"gorgonia.org/tensor"
@@ -175,9 +176,45 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 }
 
 func eventProcessor(state *State, eventChannel <-chan string) {
+	primaryEmbeddings := make(map[string]tensor.Tensor)
+	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
+	if err != nil {
+		panic(err)
+	}
+	for rows.Next() {
+		var label string
+		var embeddingJson string
+		err := rows.Scan(&label, &embeddingJson)
+		if err != nil {
+			panic(err)
+		}
+		var embeddingA []any
+		err = json.Unmarshal([]byte(embeddingJson), &embeddingA)
+		if err != nil {
+			panic(err)
+		}
+		embeddingF, ok := lo.FromAnySlice[float64](embeddingA)
+		if !ok {
+			panic("failed to convert from any to f64 array")
+		}
+		primaryEmbeddingT := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(embeddingF))
+		primaryEmbeddings[label] = primaryEmbeddingT
+	}
+
 	for {
 		text := <-eventChannel
 		slog.Debug("processing event", slog.String("text", text))
+		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, text)
+		embeddingT := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(embeddingData))
+		fmt.Println(text)
+		for label, primaryEmbedding := range primaryEmbeddings {
+			distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println(label, distance)
+		}
+
 		func() {
 			state.processedCounter.Lock()
 			defer state.processedCounter.Unlock()
@@ -451,11 +488,11 @@ func hello(c echo.Context) error {
 	return c.String(http.StatusOK, "Hello, World!")
 }
 
-func CosineSimilarity(a, b *tensor.Dense) (float64, error) {
+func CosineSimilarity(a, b tensor.Tensor) (float64, error) {
 	// Check if tensors are vectors
-	if len(a.Shape()) != 1 || len(b.Shape()) != 1 {
-		return 0, fmt.Errorf("inputs must be 1D tensors, got shapes %v and %v", a.Shape(), b.Shape())
-	}
+	//if len(a.Shape()) != 1 || len(b.Shape()) != 1 {
+	//	return 0, fmt.Errorf("inputs must be 1D tensors, got shapes %v and %v", a.Shape(), b.Shape())
+	//}
 
 	// Check if vectors have same length
 	if a.Shape()[0] != b.Shape()[0] {
@@ -476,14 +513,8 @@ func CosineSimilarity(a, b *tensor.Dense) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error calculating dot product db: %v", err)
 	}
-	vda, err := da.At(0)
-	if err != nil {
-		panic(err)
-	}
-	vdb, err := db.At(0)
-	if err != nil {
-		panic(err)
-	}
+	vda := da.ScalarValue()
+	vdb := db.ScalarValue()
 	magnitudeA := math.Sqrt(vda.(float64))
 	magnitudeB := math.Sqrt(vdb.(float64))
 
@@ -492,10 +523,7 @@ func CosineSimilarity(a, b *tensor.Dense) (float64, error) {
 		return 0, fmt.Errorf("error calculating similarity: %v", err)
 	}
 
-	similarityA, err := similarityT.At(0)
-	if err != nil {
-		return 0, fmt.Errorf("error calculating similarity get: %v", err)
-	}
+	similarityA := similarityT.ScalarValue()
 	similarity := similarityA.(float64)
 
 	if similarity > 1.0 {
