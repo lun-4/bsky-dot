@@ -216,6 +216,10 @@ func main() {
 		post text primary key,
 		embedding text -- json encoded
 	) STRICT;
+	CREATE TABLE IF NOT EXISTS primary_sentiment_vectors (
+		label text,
+		embedding text
+	) STRICT;
 	`)
 	if err != nil {
 		panic(err)
@@ -399,9 +403,25 @@ func embedEverything(state *State, cfg Config) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("negativeAverage", negativeAverage)
-	fmt.Println("neutralAverage", neutralAverage)
-	fmt.Println("positiveAverage", positiveAverage)
+
+	storePrimaryEmbedding(state, "negative", negativeAverage)
+	storePrimaryEmbedding(state, "neutral", neutralAverage)
+	storePrimaryEmbedding(state, "positive", positiveAverage)
+	fmt.Println("Finished")
+}
+
+func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tensor.Tensor) {
+	array := primaryEmbedding.Data().([]float64)
+	encodedB, err := json.Marshal(array)
+	if err != nil {
+		panic(err)
+	}
+	encoded := string(encodedB)
+	_, err = state.db.Exec(`INSERT INTO primary_sentiment_vectors (label, embedding) VALUES (?, ?)
+					ON CONFLICT DO UPDATE SET embedding=?`, sentiment, encoded, encoded)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func run(state *State, cfg Config) {
