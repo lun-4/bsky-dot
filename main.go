@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math"
 	"net/http"
 	"os"
 	"sync"
@@ -23,7 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
-	_ "gorgonia.org/tensor"
+	"gorgonia.org/tensor"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -51,10 +52,14 @@ type Config struct {
 	databasePath string
 	upstreamType UpstreamType
 	httpPort     string
+	embeddingUrl string
 	debug        bool
 }
 
 func (c *Config) Defaults() {
+	if c.embeddingUrl == "" {
+		panic("must have LLAMACPP_EMBEDDING_URL set")
+	}
 	if c.httpPort == "" {
 		c.httpPort = "8080"
 	}
@@ -187,6 +192,7 @@ func main() {
 		upstreamType: upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
 		httpPort:     os.Getenv("HTTP_PORT"),
 		debug:        os.Getenv("DEBUG") != "",
+		embeddingUrl: os.Getenv("LLAMACPP_EMBEDDING_URL"),
 	}
 	cfg.Defaults()
 	if len(os.Args) < 2 {
@@ -235,7 +241,7 @@ type TweetEvalRow struct {
 	Label *int64  `parquet:"name=label, type=INT64"`
 }
 
-func getUpstreamEmbedding(client http.Client, text string) []float64 {
+func getUpstreamEmbedding(cfg Config, client http.Client, text string) []float64 {
 
 	body := map[string]any{
 		"content": text,
@@ -244,7 +250,7 @@ func getUpstreamEmbedding(client http.Client, text string) []float64 {
 	if err != nil {
 		panic(err)
 	}
-	req, err := http.NewRequest("POST", "http://kotys:4575/embedding", bytes.NewReader(encodedBody))
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/embedding", cfg.embeddingUrl), bytes.NewReader(encodedBody))
 	if err != nil {
 		panic(err)
 	}
@@ -277,6 +283,20 @@ func getUpstreamEmbedding(client http.Client, text string) []float64 {
 
 }
 
+var SENTIMENT_MAP = map[int]string{
+	0: "negative",
+	1: "neutral",
+	2: "positive",
+}
+
+func zeroArray() []float64 {
+	zeroes := make([]float64, 768)
+	for idx, _ := range zeroes {
+		zeroes[idx] = 0.0
+	}
+	return zeroes
+}
+
 func embedEverything(state *State, cfg Config) {
 	fr, err := local.NewLocalFileReader("dataset/train.parquet")
 	if err != nil {
@@ -286,6 +306,20 @@ func embedEverything(state *State, cfg Config) {
 	pr, err := reader.NewParquetReader(fr, new(TweetEvalRow), 4)
 	if err != nil {
 		panic(err)
+	}
+
+	type EmbeddingHolder struct {
+		negative      tensor.Tensor
+		negativeCount float64
+		neutral       tensor.Tensor
+		neutralCount  float64
+		positive      tensor.Tensor
+		positiveCount float64
+	}
+	labelEmbeddings := EmbeddingHolder{
+		negative: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
+		neutral:  tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
+		positive: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
 	}
 
 	cli := http.Client{}
@@ -299,14 +333,13 @@ func embedEverything(state *State, cfg Config) {
 		for _, row := range stus {
 			text := *row.Text
 			label := *row.Label
-			fmt.Println(label, text)
 			row := state.db.QueryRow("SELECT embedding FROM original_embeddings WHERE post=?", text)
 			var databaseEmbedding string
 			var embedding []float64
 			err := row.Scan(&databaseEmbedding)
 			if errors.Is(err, sql.ErrNoRows) {
 				// get embedding from upstream llama.cpp
-				embedding = getUpstreamEmbedding(cli, text)
+				embedding = getUpstreamEmbedding(cfg, cli, text)
 				data, err := json.Marshal(embedding)
 				if err != nil {
 					panic(err)
@@ -323,14 +356,52 @@ func embedEverything(state *State, cfg Config) {
 					panic(err)
 				}
 			}
-			// faster
-			//embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
-			// faster
-			//fmt.Println(embeddingT)
+			embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
+			sentiment := SENTIMENT_MAP[int(label)]
+			fmt.Println(label, embeddingT)
+			switch sentiment {
+			case "negative":
+				labelEmbeddings.negative, err = tensor.Add(labelEmbeddings.negative, embeddingT)
+				if err != nil {
+					panic(err)
+				}
+				labelEmbeddings.negativeCount++
+			case "neutral":
+				labelEmbeddings.neutral, err = tensor.Add(labelEmbeddings.neutral, embeddingT)
+				if err != nil {
+					panic(err)
+				}
+				labelEmbeddings.neutralCount++
+			case "positive":
+				labelEmbeddings.positive, err = tensor.Add(labelEmbeddings.positive, embeddingT)
+				if err != nil {
+					panic(err)
+
+				}
+				labelEmbeddings.positiveCount++
+			default:
+				panic("unknown sentiment")
+			}
 		}
 	}
 	pr.ReadStop()
 	fr.Close()
+
+	negativeAverage, err := tensor.Div(labelEmbeddings.negative, labelEmbeddings.negativeCount)
+	if err != nil {
+		panic(err)
+	}
+	neutralAverage, err := tensor.Div(labelEmbeddings.neutral, labelEmbeddings.neutralCount)
+	if err != nil {
+		panic(err)
+	}
+	positiveAverage, err := tensor.Div(labelEmbeddings.positive, labelEmbeddings.positiveCount)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("negativeAverage", negativeAverage)
+	fmt.Println("neutralAverage", neutralAverage)
+	fmt.Println("positiveAverage", positiveAverage)
 }
 
 func run(state *State, cfg Config) {
@@ -358,4 +429,59 @@ func run(state *State, cfg Config) {
 // Handler
 func hello(c echo.Context) error {
 	return c.String(http.StatusOK, "Hello, World!")
+}
+
+func CosineSimilarity(a, b *tensor.Dense) (float64, error) {
+	// Check if tensors are vectors
+	if len(a.Shape()) != 1 || len(b.Shape()) != 1 {
+		return 0, fmt.Errorf("inputs must be 1D tensors, got shapes %v and %v", a.Shape(), b.Shape())
+	}
+
+	// Check if vectors have same length
+	if a.Shape()[0] != b.Shape()[0] {
+		return 0, fmt.Errorf("vectors must have equal length, got lengths %d and %d", a.Shape()[0], b.Shape()[0])
+	}
+
+	// Calculate dot product
+	dotProduct, err := tensor.Dot(a, b)
+	if err != nil {
+		return 0, fmt.Errorf("error calculating dot product ab: %v", err)
+	}
+	da, err := tensor.Dot(a, a)
+	if err != nil {
+		return 0, fmt.Errorf("error calculating dot product da: %v", err)
+	}
+
+	db, err := tensor.Dot(b, b)
+	if err != nil {
+		return 0, fmt.Errorf("error calculating dot product db: %v", err)
+	}
+	vda, err := da.At(0)
+	if err != nil {
+		panic(err)
+	}
+	vdb, err := db.At(0)
+	if err != nil {
+		panic(err)
+	}
+	magnitudeA := math.Sqrt(vda.(float64))
+	magnitudeB := math.Sqrt(vdb.(float64))
+
+	similarityT, err := tensor.Div(dotProduct, magnitudeA*magnitudeB)
+	if err != nil {
+		return 0, fmt.Errorf("error calculating similarity: %v", err)
+	}
+
+	similarityA, err := similarityT.At(0)
+	if err != nil {
+		return 0, fmt.Errorf("error calculating similarity get: %v", err)
+	}
+	similarity := similarityA.(float64)
+
+	if similarity > 1.0 {
+		similarity = 1.0
+	} else if similarity < -1.0 {
+		similarity = -1.0
+	}
+	return similarity, nil
 }
