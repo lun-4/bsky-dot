@@ -469,15 +469,22 @@ func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tens
 
 func sentimentProcessor(state *State, sentimentChannel <-chan string) {
 	sentimentCounters := make(map[string]uint)
-	ticker := time.Tick(time.Second)
+	ticker := time.Tick(2 * time.Second)
 	for {
 		select {
 		case sentiment := <-sentimentChannel:
 			sentimentCounters[sentiment]++
 		case <-ticker:
-			for sentiment, count := range sentimentCounters {
-				fmt.Println(sentiment, count)
+			var sum uint
+			for _, count := range sentimentCounters {
+				sum += count
 			}
+			for sentiment, count := range sentimentCounters {
+				score := float64(count) / float64(sum)
+				fmt.Println(sentiment, score)
+			}
+
+			sentimentCounters = make(map[string]uint)
 
 		}
 	}
