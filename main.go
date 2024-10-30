@@ -501,7 +501,8 @@ func sentimentProcessor(state *State, sentimentChannel <-chan string) {
 	_ = sentimentChannel
 	//sentimentCounters := make(map[string]uint)
 	//ticker := time.Tick(1 * time.Minute)
-	ticker := time.Tick(5 * time.Second)
+	timePeriod := 5 * time.Second
+	ticker := time.Tick(timePeriod)
 	for {
 		select {
 		//case sentiment := <-sentimentChannel:
@@ -510,7 +511,7 @@ func sentimentProcessor(state *State, sentimentChannel <-chan string) {
 			// get all sentiments from the past minute
 			slog.Info("computing sentiments..")
 			rows, err := state.db.Query(`SELECT post, sentiment_analyst FROM sentiment_events WHERE timestamp > ?`,
-				time.Now().Add(-1*time.Minute).UnixMilli())
+				time.Now().Add(-timePeriod).UnixMilli())
 			if err != nil {
 				panic(err)
 			}
@@ -537,10 +538,21 @@ func sentimentProcessor(state *State, sentimentChannel <-chan string) {
 			for _, label := range sentiments {
 				sentimentCounters[label]++
 			}
+			proportions := make([]float64, 3)
 			for sentiment, count := range sentimentCounters {
 				proportion := float64(count) / float64(len(sentiments))
-				fmt.Println(sentiment, proportion)
+				switch sentiment {
+				case "negative":
+					proportions[0] = proportion
+				case "neutral":
+					proportions[1] = proportion
+				case "positive":
+					proportions[2] = proportion
+				}
 			}
+
+			dotValue := MapProportions(proportions)
+			slog.Info("computed", slog.Float64("dot", dotValue))
 		}
 	}
 }
@@ -618,4 +630,30 @@ func CosineSimilarity(a, b tensor.Tensor) (float64, error) {
 		similarity = -1.0
 	}
 	return similarity, nil
+}
+
+// MapProportions maps three proportions (A, B, C) to a value between -1 and 1
+func MapProportions(proportions []float64) float64 {
+	// Ensure we have exactly 3 proportions
+	if len(proportions) != 3 {
+		panic("MapProportions requires exactly 3 proportions")
+	}
+
+	// Get individual proportions
+	a, b, c := proportions[0], proportions[1], proportions[2]
+
+	// Normalize the proportions
+	total := a + b + c
+	if total > 0 {
+		a, b = a/total, b/total
+		c = c / total
+	}
+
+	// Calculate weighted contributions
+	// A pulls negative (-1), B is neutral (0), C pulls positive (+1)
+	weightedSum := -a*1.0 + c*1.0
+
+	// Apply sigmoid-like smoothing to ensure nice distribution
+	// and guarantee output is between -1 and 1
+	return math.Tanh(weightedSum * 1.5)
 }
