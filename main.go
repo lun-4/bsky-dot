@@ -219,7 +219,17 @@ func eventProcessor(state *State, eventChannel <-chan string, sentimentChannel c
 			}
 			//fmt.Println(label, distance)
 		}
-
+		_, err = state.db.Exec(`INSERT INTO sentiment_data (post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?)
+			ON CONFLICT DO NOTHING`,
+			text, "v1", maxLabel)
+		if err != nil {
+			slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
+		}
+		_, err = state.db.Exec(`INSERT INTO sentiment_events (timestamp, post) VALUES (?, ?)`,
+			time.Now().UnixMilli(), text)
+		if err != nil {
+			slog.Error("error in db insert", slog.String("err", err.Error()))
+		}
 		sentimentChannel <- maxLabel
 		func() {
 			state.processedCounter.Lock()
@@ -262,6 +272,16 @@ func main() {
 	CREATE TABLE IF NOT EXISTS primary_sentiment_vectors (
 		label text,
 		embedding text
+	) STRICT;
+	CREATE TABLE IF NOT EXISTS sentiment_data (
+		post text primary key,
+		sentiment_analyst text,
+		sentiment_data text
+	) STRICT;
+	CREATE TABLE IF NOT EXISTS sentiment_events (
+		timestamp integer,
+		post text,
+		primary key (timestamp, post)
 	) STRICT;
 	`)
 	if err != nil {
@@ -485,10 +505,8 @@ func sentimentProcessor(state *State, sentimentChannel <-chan string) {
 			}
 
 			sentimentCounters = make(map[string]uint)
-
 		}
 	}
-
 }
 
 func run(state *State, cfg Config) {
