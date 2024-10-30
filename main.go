@@ -26,7 +26,6 @@ import (
 	"github.com/bluesky-social/indigo/events/schedulers/sequential"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/gorilla/websocket"
-	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 	"gorgonia.org/tensor"
@@ -212,56 +211,12 @@ type Post struct {
 }
 
 const EMBEDDING_V1_SIZE = 768
+const EMBEDDING_V1_MODEL = "nomic-embed-text-v1.5.Q8_0.gguf"
 
 var EMBEDDING_V1_SHAPE = tensor.WithShape(EMBEDDING_V1_SIZE)
 
-func sentimentFromText_V1(cfg Config, text string, primaryEmbeddings map[string]tensor.Tensor) string {
-	embeddingData := getUpstreamEmbedding(cfg, http.Client{}, text)
-	embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
-	maxLabel, maxDistance := "", math.Inf(1)
-	for label, primaryEmbedding := range primaryEmbeddings {
-		distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
-		if err != nil {
-			panic(err)
-		}
-		if distance < maxDistance {
-			maxLabel = label
-			maxDistance = distance
-		}
-	}
-	return maxLabel
-}
-
-func getPrimaryEmbeddings(state *State) map[string]tensor.Tensor {
-	primaryEmbeddings := make(map[string]tensor.Tensor)
-	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
-	if err != nil {
-		panic(err)
-	}
-	for rows.Next() {
-		var label string
-		var embeddingJson string
-		err := rows.Scan(&label, &embeddingJson)
-		if err != nil {
-			panic(err)
-		}
-		var embeddingA []any
-		err = json.Unmarshal([]byte(embeddingJson), &embeddingA)
-		if err != nil {
-			panic(err)
-		}
-		embeddingF, ok := lo.FromAnySlice[float64](embeddingA)
-		if !ok {
-			panic("failed to convert from any to f64 array")
-		}
-		primaryEmbeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingF))
-		primaryEmbeddings[label] = primaryEmbeddingT
-	}
-	return primaryEmbeddings
-}
-
 func eventProcessor(state *State, eventChannel <-chan Post) {
-	primaryEmbeddings := getPrimaryEmbeddings(state)
+	primaryEmbeddings := getPrimaryEmbeddings_V1(state)
 
 	for {
 		post := <-eventChannel
@@ -380,9 +335,11 @@ func main() {
 		db:  db,
 	}
 
+	validateEmbeddingModel(cfg)
+
 	switch arg {
 	case "embed-everything":
-		embedEverything(&state, cfg)
+		embedEverything_V1(&state, cfg)
 	case "run":
 		run(&state, cfg)
 	default:
@@ -393,6 +350,34 @@ func main() {
 type TweetEvalRow struct {
 	Text  *string `parquet:"name=text, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	Label *int64  `parquet:"name=label, type=INT64"`
+}
+
+func validateEmbeddingModel(cfg Config) {
+	req, err := http.NewRequest("GET", cfg.embeddingUrl+"/v1/models", nil)
+	if err != nil {
+		panic(err)
+	}
+	client := http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	v, err := io.ReadAll(res.Body)
+	if err != nil {
+		panic(err)
+	}
+	var modelsMap map[string]any
+	err = json.Unmarshal(v, &modelsMap)
+	if err != nil {
+		panic(err)
+	}
+	modelsData := modelsMap["data"].([]any)
+	firstModel := modelsData[0].(map[string]any)
+	model := firstModel["id"].(string)
+	if model != EMBEDDING_V1_MODEL {
+		slog.Error("model does not match expected model", slog.String("expected", EMBEDDING_V1_MODEL), slog.String("found", model))
+		panic("model does not match expected model")
+	}
 }
 
 func getUpstreamEmbedding(cfg Config, client http.Client, text string) []float64 {
@@ -451,7 +436,7 @@ func zeroEmbedding(val float64) []float64 {
 	return zeroes
 }
 
-func embedEverything(state *State, cfg Config) {
+func embedEverything_V1(state *State, cfg Config) {
 	fr, err := local.NewLocalFileReader("dataset/train.parquet")
 	if err != nil {
 		panic(err)
