@@ -215,7 +215,24 @@ const EMBEDDING_V1_SIZE = 768
 
 var EMBEDDING_V1_SHAPE = tensor.WithShape(EMBEDDING_V1_SIZE)
 
-func eventProcessor(state *State, eventChannel <-chan Post) {
+func sentimentFromText_V1(cfg Config, text string, primaryEmbeddings map[string]tensor.Tensor) string {
+	embeddingData := getUpstreamEmbedding(cfg, http.Client{}, text)
+	embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
+	maxLabel, maxDistance := "", math.Inf(1)
+	for label, primaryEmbedding := range primaryEmbeddings {
+		distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
+		if err != nil {
+			panic(err)
+		}
+		if distance < maxDistance {
+			maxLabel = label
+			maxDistance = distance
+		}
+	}
+	return maxLabel
+}
+
+func getPrimaryEmbeddings(state *State) map[string]tensor.Tensor {
 	primaryEmbeddings := make(map[string]tensor.Tensor)
 	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
 	if err != nil {
@@ -240,25 +257,16 @@ func eventProcessor(state *State, eventChannel <-chan Post) {
 		primaryEmbeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingF))
 		primaryEmbeddings[label] = primaryEmbeddingT
 	}
+	return primaryEmbeddings
+}
+
+func eventProcessor(state *State, eventChannel <-chan Post) {
+	primaryEmbeddings := getPrimaryEmbeddings(state)
 
 	for {
 		post := <-eventChannel
 		slog.Debug("processing event", slog.String("text", post.text))
-		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, post.text)
-		embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
-		maxLabel, maxDistance := "", math.Inf(1)
-		//fmt.Println(text)
-		for label, primaryEmbedding := range primaryEmbeddings {
-			distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
-			if err != nil {
-				panic(err)
-			}
-			if distance < maxDistance {
-				maxLabel = label
-				maxDistance = distance
-			}
-			//fmt.Println(label, distance)
-		}
+		sentiment := sentimentFromText_V1(state.cfg, post.text, primaryEmbeddings)
 
 		func() {
 			tx, err := state.db.Begin()
@@ -268,7 +276,7 @@ func eventProcessor(state *State, eventChannel <-chan Post) {
 			}
 			_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
 			ON CONFLICT DO NOTHING`,
-				post.hash, post.text, "v1", maxLabel)
+				post.hash, post.text, "v1", sentiment)
 			if err != nil {
 				slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
 			}
@@ -279,8 +287,8 @@ func eventProcessor(state *State, eventChannel <-chan Post) {
 			}
 		}()
 
-		// TODO fucking around in design space1
-		//sentimentChannel <- maxLabel
+		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
+		//sentimentChannel <- sentiment
 		func() {
 			state.processedCounter.Lock()
 			defer state.processedCounter.Unlock()
