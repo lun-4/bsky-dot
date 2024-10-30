@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -629,21 +630,76 @@ func run(state *State, cfg Config) {
 	e.Logger.Fatal(e.Start(":" + cfg.httpPort))
 }
 
-// Handler
-func hello(c echo.Context) error {
-	cc := c.(*CustomContext)
+func GetCurrentDot(state *State) (float64, error) {
+
 	var dotDataEncoded string
-	err := cc.State().db.QueryRow(`SELECT data FROM dot_data ORDER BY timestamp DESC LIMIT 1`).Scan(&dotDataEncoded)
+	err := state.db.QueryRow(`SELECT data FROM dot_data ORDER BY timestamp DESC LIMIT 1`).Scan(&dotDataEncoded)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var dotData map[string]any
 	err = json.Unmarshal([]byte(dotDataEncoded), &dotData)
 	if err != nil {
+		return 0, err
+	}
+	dv := dotData["v"].(float64)
+	return dv, nil
+}
+
+func GetLastCoupleDots(state *State) ([]float64, error) {
+	rows, err := state.db.Query(`SELECT data FROM dot_data ORDER BY timestamp DESC LIMIT 100`)
+	if err != nil {
+		return nil, err
+	}
+	dots := make([]float64, 0)
+	for rows.Next() {
+		var dotDataEncoded string
+		err := rows.Scan(&dotDataEncoded)
+		if err != nil {
+			return nil, err
+		}
+
+		var dotData map[string]any
+		err = json.Unmarshal([]byte(dotDataEncoded), &dotData)
+		if err != nil {
+			return nil, err
+		}
+		dv := dotData["v"].(float64)
+		dots = append(dots, dv)
+	}
+	return dots, nil
+}
+
+// Handler
+func hello(c echo.Context) error {
+	cc := c.(*CustomContext)
+	dotValue, err := GetCurrentDot(cc.State())
+	if err != nil {
 		return err
 	}
-	dotValue := dotData["v"].(float64)
-	return c.String(http.StatusOK, fmt.Sprintf("%f", dotValue))
+	dots, err := GetLastCoupleDots(cc.State())
+	if err != nil {
+		return err
+	}
+
+	filename, err := GenerateDotPlot(dots)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(filename)
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	encodedImg := base64.StdEncoding.EncodeToString(data)
+	c.Response().Header().Set("content-type", "text/html")
+	return c.HTML(http.StatusOK, fmt.Sprintf(`
+		<h1>the dot</h1>
+		value is %.5f
+		<img src="data:image/png;base64,%s" alt="dot historical" />
+	`, dotValue, encodedImg))
 }
 
 func CosineSimilarity(a, b tensor.Tensor) (float64, error) {
