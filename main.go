@@ -664,6 +664,7 @@ func run(state *State, cfg Config) {
 	}
 
 	go eventMetrics(state, eventChannel)
+	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
 	for range state.cfg.numWorkers {
 		go eventProcessor(state, eventChannel) //, sentimentChannel)
 	}
