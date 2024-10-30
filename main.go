@@ -609,12 +609,18 @@ func run(state *State, cfg Config) {
 		panic("unsupported upstream type. this is a bug")
 	}
 
-	go eventMetrics(state)
+	go eventMetrics(state, eventChannel)
 	go eventProcessor(state, eventChannel) //, sentimentChannel)
 	go sentimentProcessor(state)           //, sentimentChannel)
 
 	e := echo.New()
 
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			cc := &CustomContext{c, state}
+			return next(cc)
+		}
+	})
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
@@ -625,7 +631,19 @@ func run(state *State, cfg Config) {
 
 // Handler
 func hello(c echo.Context) error {
-	return c.String(http.StatusOK, "Hello, World!")
+	cc := c.(*CustomContext)
+	var dotDataEncoded string
+	err := cc.State().db.QueryRow(`SELECT data FROM dot_data ORDER BY timestamp DESC LIMIT 1`).Scan(&dotDataEncoded)
+	if err != nil {
+		return err
+	}
+	var dotData map[string]any
+	err = json.Unmarshal([]byte(dotDataEncoded), &dotData)
+	if err != nil {
+		return err
+	}
+	dotValue := dotData["v"].(float64)
+	return c.String(http.StatusOK, fmt.Sprintf("%f", dotValue))
 }
 
 func CosineSimilarity(a, b tensor.Tensor) (float64, error) {
