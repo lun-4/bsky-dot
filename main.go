@@ -137,9 +137,11 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 
 	rsc := &events.RepoStreamCallbacks{
 		RepoCommit: func(evt *atproto.SyncSubscribeRepos_Commit) error {
-			state.incomingCounter.Lock()
-			defer state.incomingCounter.Unlock()
-			state.incomingCounter.ui++
+			func() {
+				state.incomingCounter.Lock()
+				defer state.incomingCounter.Unlock()
+				state.incomingCounter.ui++
+			}()
 
 			rr, err := repo.ReadRepoFromCar(state.ctx, bytes.NewReader(evt.Blocks))
 			if err != nil {
@@ -162,9 +164,11 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 
 				switch recordType {
 				case "app.bsky.feed.post":
-					state.postCounter.Lock()
-					defer state.postCounter.Unlock()
-					state.postCounter.ui++
+					func() {
+						state.postCounter.Lock()
+						defer state.postCounter.Unlock()
+						state.postCounter.ui++
+					}()
 
 					rec, err := data.UnmarshalCBOR(recordData)
 					if err != nil {
@@ -521,7 +525,8 @@ func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tens
 func sentimentProcessor(state *State) {
 	//sentimentCounters := make(map[string]uint)
 	//ticker := time.Tick(1 * time.Minute)
-	timePeriod := 5 * time.Second
+	//	timePeriod := 5 * time.Second
+	timePeriod := 1 * time.Minute
 	ticker := time.Tick(timePeriod)
 	for {
 		select {
