@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -374,7 +375,7 @@ func validateEmbeddingModel(cfg Config) {
 	modelsData := modelsMap["data"].([]any)
 	firstModel := modelsData[0].(map[string]any)
 	model := firstModel["id"].(string)
-	if model != EMBEDDING_V1_MODEL {
+	if !strings.Contains(model, EMBEDDING_V1_MODEL) {
 		slog.Error("model does not match expected model", slog.String("expected", EMBEDDING_V1_MODEL), slog.String("found", model))
 		panic("model does not match expected model")
 	}
