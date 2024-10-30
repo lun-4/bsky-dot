@@ -182,6 +182,8 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 }
 
 func eventProcessor(state *State, eventChannel <-chan string, sentimentChannel chan string) {
+	_ = sentimentChannel
+
 	primaryEmbeddings := make(map[string]tensor.Tensor)
 	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
 	if err != nil {
@@ -236,7 +238,8 @@ func eventProcessor(state *State, eventChannel <-chan string, sentimentChannel c
 		if err != nil {
 			slog.Error("error in db insert", slog.String("err", err.Error()))
 		}
-		sentimentChannel <- maxLabel
+		// TODO fucking around in design space1
+		//sentimentChannel <- maxLabel
 		func() {
 			state.processedCounter.Lock()
 			defer state.processedCounter.Unlock()
@@ -495,23 +498,49 @@ func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tens
 }
 
 func sentimentProcessor(state *State, sentimentChannel <-chan string) {
-	sentimentCounters := make(map[string]uint)
-	ticker := time.Tick(2 * time.Second)
+	_ = sentimentChannel
+	//sentimentCounters := make(map[string]uint)
+	//ticker := time.Tick(1 * time.Minute)
+	ticker := time.Tick(5 * time.Second)
 	for {
 		select {
-		case sentiment := <-sentimentChannel:
-			sentimentCounters[sentiment]++
+		//case sentiment := <-sentimentChannel:
+		//	sentimentCounters[sentiment]++
 		case <-ticker:
-			var sum uint
-			for _, count := range sentimentCounters {
-				sum += count
+			// get all sentiments from the past minute
+			slog.Info("computing sentiments..")
+			rows, err := state.db.Query(`SELECT post, sentiment_analyst FROM sentiment_events WHERE timestamp > ?`,
+				time.Now().Add(-1*time.Minute).UnixMilli())
+			if err != nil {
+				panic(err)
 			}
-			for sentiment, count := range sentimentCounters {
-				score := float64(count) / float64(sum)
-				fmt.Println(sentiment, score)
+			sentiments := make([]string, 0)
+			for rows.Next() {
+				var post string
+				var analyst string
+				err := rows.Scan(&post, &analyst)
+				if err != nil {
+					panic(err)
+				}
+
+				// for each event, get its sentiment (this should be a join maybe)
+				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post=? AND sentiment_analyst=?`, post, analyst)
+				var sentimentData string
+				err = row.Scan(&sentimentData)
+				if err != nil {
+					panic(err)
+				}
+				sentiments = append(sentiments, sentimentData)
 			}
 
-			sentimentCounters = make(map[string]uint)
+			sentimentCounters := make(map[string]uint)
+			for _, label := range sentiments {
+				sentimentCounters[label]++
+			}
+			for sentiment, count := range sentimentCounters {
+				proportion := float64(count) / float64(len(sentiments))
+				fmt.Println(sentiment, proportion)
+			}
 		}
 	}
 }
