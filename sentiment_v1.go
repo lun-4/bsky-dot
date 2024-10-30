@@ -11,9 +11,11 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+var v1meta = EMBEDDING_META["v1"]
+
 func sentimentFromText_V1(cfg Config, text string, primaryEmbeddings map[string]tensor.Tensor) string {
 	embeddingData := getUpstreamEmbedding(cfg, http.Client{}, text)
-	embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
+	embeddingT := tensor.New(v1meta.Shape(), tensor.WithBacking(embeddingData))
 	maxLabel, maxDistance := "", math.Inf(1)
 	for label, primaryEmbedding := range primaryEmbeddings {
 		distance, err := CosineSimilarity(primaryEmbedding, embeddingT)
@@ -50,7 +52,7 @@ func getPrimaryEmbeddings_V1(state *State) map[string]tensor.Tensor {
 		if !ok {
 			panic("failed to convert from any to f64 array")
 		}
-		primaryEmbeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingF))
+		primaryEmbeddingT := tensor.New(v1meta.Shape(), tensor.WithBacking(embeddingF))
 		primaryEmbeddings[label] = primaryEmbeddingT
 	}
 	return primaryEmbeddings

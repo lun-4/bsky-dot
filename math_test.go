@@ -17,8 +17,10 @@ func Test_CosineSimilarity(t *testing.T) {
 	assert.NoError(t, err)
 	assert.GreaterOrEqual(t, simAB, 0.97)
 
-	vec1 := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0.1)))
-	vec2 := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0.9)))
+	v1meta := EMBEDDING_META["v1"]
+
+	vec1 := tensor.New(v1meta.Shape(), tensor.WithBacking(zeroEmbedding(v1meta.size, 0.1)))
+	vec2 := tensor.New(v1meta.Shape(), tensor.WithBacking(zeroEmbedding(v1meta.size, 0.9)))
 	sim1, err := CosineSimilarity2(vec1, vec1)
 	sim11, err := CosineSimilarity2(vec1, vec1)
 	assert.NoError(t, err)

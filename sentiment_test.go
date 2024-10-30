@@ -38,7 +38,7 @@ func Test_SentimentFromText_V1(t *testing.T) {
 		db:  db,
 	}
 
-	primaryEmbeddings := getPrimaryEmbeddings(fakeState)
+	primaryEmbeddings := getPrimaryEmbeddings_V1(fakeState)
 
 	tests := []struct {
 		text string

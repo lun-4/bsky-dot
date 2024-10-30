@@ -54,12 +54,13 @@ func upstreamTypeFromString(s string) UpstreamType {
 }
 
 type Config struct {
-	databasePath string
-	upstreamType UpstreamType
-	httpPort     string
-	embeddingUrl string
-	debug        bool
-	numWorkers   uint
+	databasePath     string
+	upstreamType     UpstreamType
+	httpPort         string
+	embeddingUrl     string
+	embeddingVersion string
+	debug            bool
+	numWorkers       uint
 }
 
 func (c *Config) Defaults() {
@@ -211,11 +212,6 @@ type Post struct {
 	hash string
 }
 
-const EMBEDDING_V1_SIZE = 768
-const EMBEDDING_V1_MODEL = "nomic-embed-text-v1.5.Q8_0.gguf"
-
-var EMBEDDING_V1_SHAPE = tensor.WithShape(EMBEDDING_V1_SIZE)
-
 func eventProcessor(state *State, eventChannel <-chan Post) {
 	primaryEmbeddings := getPrimaryEmbeddings_V1(state)
 
@@ -275,12 +271,13 @@ func getEnvUint(key string, defaultValue uint) uint {
 
 func main() {
 	cfg := Config{
-		databasePath: "./dot.db",
-		upstreamType: upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
-		httpPort:     os.Getenv("HTTP_PORT"),
-		debug:        os.Getenv("DEBUG") != "",
-		embeddingUrl: os.Getenv("LLAMACPP_EMBEDDING_URL"),
-		numWorkers:   getEnvUint("NUM_WORKERS", 3),
+		databasePath:     "./dot.db",
+		upstreamType:     upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
+		httpPort:         os.Getenv("HTTP_PORT"),
+		debug:            os.Getenv("DEBUG") != "",
+		embeddingUrl:     os.Getenv("LLAMACPP_EMBEDDING_URL"),
+		embeddingVersion: "v1",
+		numWorkers:       getEnvUint("NUM_WORKERS", 3),
 	}
 	cfg.Defaults()
 	if len(os.Args) < 2 {
@@ -375,8 +372,9 @@ func validateEmbeddingModel(cfg Config) {
 	modelsData := modelsMap["data"].([]any)
 	firstModel := modelsData[0].(map[string]any)
 	model := firstModel["id"].(string)
-	if !strings.Contains(model, EMBEDDING_V1_MODEL) {
-		slog.Error("model does not match expected model", slog.String("expected", EMBEDDING_V1_MODEL), slog.String("found", model))
+	wantedModel := EMBEDDING_META[cfg.embeddingVersion].model
+	if !strings.Contains(model, wantedModel) {
+		slog.Error("model does not match expected model", slog.String("expected", wantedModel), slog.String("found", model))
 		panic("model does not match expected model")
 	}
 }
@@ -429,8 +427,8 @@ var SENTIMENT_MAP = map[int]string{
 	2: "positive",
 }
 
-func zeroEmbedding(val float64) []float64 {
-	zeroes := make([]float64, EMBEDDING_V1_SIZE)
+func zeroEmbedding(size uint, val float64) []float64 {
+	zeroes := make([]float64, size)
 	for idx := range zeroes {
 		zeroes[idx] = val
 	}
@@ -456,10 +454,12 @@ func embedEverything_V1(state *State, cfg Config) {
 		positive      tensor.Tensor
 		positiveCount float64
 	}
+	meta := EMBEDDING_META["v1"]
+	shape := tensor.WithShape(int(meta.size))
 	labelEmbeddings := EmbeddingHolder{
-		negative: tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
-		neutral:  tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
-		positive: tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
+		negative: tensor.New(shape, tensor.WithBacking(zeroEmbedding(meta.size, 0))),
+		neutral:  tensor.New(shape, tensor.WithBacking(zeroEmbedding(meta.size, 0))),
+		positive: tensor.New(shape, tensor.WithBacking(zeroEmbedding(meta.size, 0))),
 	}
 
 	cli := http.Client{}
