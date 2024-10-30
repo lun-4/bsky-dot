@@ -16,7 +16,9 @@ func Test_CosineSimilarity(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, sim1, sim11)
 	sim2, err := CosineSimilarity(vec1, vec2)
+	sim22, err := CosineSimilarity(vec2, vec1)
 	assert.NoError(t, err)
 	fmt.Println(sim1, sim2)
+	assert.Equal(t, sim2, sim22)
 	assert.NotEqual(t, sim1, sim2)
 }
