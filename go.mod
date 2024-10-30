@@ -4,10 +4,12 @@ go 1.23.2
 
 require (
 	github.com/bluesky-social/indigo v0.0.0-20241008040750-06bacb465af7
+	github.com/go-playground/assert/v2 v2.2.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/samber/lo v1.38.1
+	github.com/stretchr/testify v1.9.0
 	github.com/xitongsys/parquet-go v1.6.2
 	github.com/xitongsys/parquet-go-source v0.0.0-20200817004010-026bad9b25d0
 	gorgonia.org/tensor v0.9.24
@@ -22,6 +24,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chewxy/hm v1.0.0 // indirect
 	github.com/chewxy/math32 v1.0.8 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -83,6 +86,7 @@ require (
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
 	github.com/prometheus/client_golang v1.20.5 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
@@ -112,6 +116,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.9.3 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorgonia.org/vecf32 v0.9.0 // indirect
 	gorgonia.org/vecf64 v0.9.0 // indirect
 	gorm.io/driver/postgres v1.5.9 // indirect

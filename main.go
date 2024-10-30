@@ -357,10 +357,10 @@ var SENTIMENT_MAP = map[int]string{
 	2: "positive",
 }
 
-func zeroArray() []float64 {
+func zeroEmbedding(val float64) []float64 {
 	zeroes := make([]float64, 768)
-	for idx, _ := range zeroes {
-		zeroes[idx] = 0.0
+	for idx := range zeroes {
+		zeroes[idx] = val
 	}
 	return zeroes
 }
@@ -385,9 +385,9 @@ func embedEverything(state *State, cfg Config) {
 		positiveCount float64
 	}
 	labelEmbeddings := EmbeddingHolder{
-		negative: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
-		neutral:  tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
-		positive: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroArray())),
+		negative: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
+		neutral:  tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
+		positive: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
 	}
 
 	cli := http.Client{}
