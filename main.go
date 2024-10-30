@@ -225,8 +225,8 @@ func eventProcessor(state *State, eventChannel <-chan string, sentimentChannel c
 		if err != nil {
 			slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
 		}
-		_, err = state.db.Exec(`INSERT INTO sentiment_events (timestamp, post) VALUES (?, ?)`,
-			time.Now().UnixMilli(), text)
+		_, err = state.db.Exec(`INSERT INTO sentiment_events (timestamp, post, sentiment_analyst) VALUES (?, ?, ?)`,
+			time.Now().UnixMilli(), text, "v1")
 		if err != nil {
 			slog.Error("error in db insert", slog.String("err", err.Error()))
 		}
@@ -281,6 +281,7 @@ func main() {
 	CREATE TABLE IF NOT EXISTS sentiment_events (
 		timestamp integer,
 		post text,
+		sentiment_analyst text,
 		primary key (timestamp, post)
 	) STRICT;
 	`)
