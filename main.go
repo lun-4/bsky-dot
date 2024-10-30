@@ -276,7 +276,7 @@ func main() {
 		httpPort:         os.Getenv("HTTP_PORT"),
 		debug:            os.Getenv("DEBUG") != "",
 		embeddingUrl:     os.Getenv("LLAMACPP_EMBEDDING_URL"),
-		embeddingVersion: "v1",
+		embeddingVersion: "v2",
 		numWorkers:       getEnvUint("NUM_WORKERS", 3),
 	}
 	cfg.Defaults()
@@ -299,11 +299,13 @@ func main() {
 	PRAGMA journal_mode=WAL;
 	CREATE TABLE IF NOT EXISTS original_embeddings (
 		post text primary key,
+		embedding_version text,
 		embedding text -- json encoded
 	) STRICT;
 	CREATE TABLE IF NOT EXISTS primary_sentiment_vectors (
 		label text,
-		embedding text
+		embedding text,
+		sentiment_analyst text
 	) STRICT;
 	CREATE TABLE IF NOT EXISTS sentiment_data (
 		post_hash text primary key,
@@ -336,12 +338,14 @@ func main() {
 	validateEmbeddingModel(cfg)
 
 	switch arg {
-	case "embed-everything":
+	case "embed-everything-v1":
 		embedEverything_V1(&state, cfg)
+	case "embed-everything-v2":
+		embedEverything_V2(&state, cfg)
 	case "run":
 		run(&state, cfg)
 	default:
-		fmt.Println("Usage: bskydot [embed-everything | run]")
+		fmt.Println("Usage: bskydot [embed-everything-v1 | embed-everything-v2 | run]")
 	}
 }
 
@@ -360,12 +364,16 @@ func validateEmbeddingModel(cfg Config) {
 	if err != nil {
 		panic(err)
 	}
-	v, err := io.ReadAll(res.Body)
+	responseBytes, err := io.ReadAll(res.Body)
 	if err != nil {
 		panic(err)
 	}
+	if res.StatusCode != http.StatusOK {
+		slog.Error("HTTP error", slog.Int("status", res.StatusCode), slog.String("response", string(responseBytes)))
+		panic("http status")
+	}
 	var modelsMap map[string]any
-	err = json.Unmarshal(v, &modelsMap)
+	err = json.Unmarshal(responseBytes, &modelsMap)
 	if err != nil {
 		panic(err)
 	}
@@ -540,21 +548,21 @@ func embedEverything_V1(state *State, cfg Config) {
 		panic(err)
 	}
 
-	storePrimaryEmbedding(state, "negative", negativeAverage)
-	storePrimaryEmbedding(state, "neutral", neutralAverage)
-	storePrimaryEmbedding(state, "positive", positiveAverage)
+	storePrimaryEmbedding(state, "negative", negativeAverage, nil)
+	storePrimaryEmbedding(state, "neutral", neutralAverage, nil)
+	storePrimaryEmbedding(state, "positive", positiveAverage, nil)
 	fmt.Println("Finished")
 }
 
-func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tensor.Tensor) {
+func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tensor.Tensor, version *string) {
 	array := primaryEmbedding.Data().([]float64)
 	encodedB, err := json.Marshal(array)
 	if err != nil {
 		panic(err)
 	}
 	encoded := string(encodedB)
-	_, err = state.db.Exec(`INSERT INTO primary_sentiment_vectors (label, embedding) VALUES (?, ?)
-					ON CONFLICT DO UPDATE SET embedding=?`, sentiment, encoded, encoded)
+	_, err = state.db.Exec(`INSERT INTO primary_sentiment_vectors (label, embedding, sentiment_analyst) VALUES (?, ?, ?)
+					ON CONFLICT DO UPDATE SET embedding=?`, sentiment, encoded, version, encoded)
 	if err != nil {
 		panic(err)
 	}
