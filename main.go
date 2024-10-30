@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,8 +123,12 @@ func eventMetrics(state *State, eventChan chan string) {
 			incoming := state.incomingCounter.Reset()
 			processed := state.processedCounter.Reset()
 			posts := state.postCounter.Reset()
+			events := len(eventChan)
+			if events > 999 {
+				slog.Warn("too many events! system is bottlenecked..", slog.Int("events", events))
+			}
 			log.Printf("%d from upstream, %d posts, %d processed events a second (channel len %d)",
-				incoming, posts, processed, len(eventChan))
+				incoming, posts, processed, events)
 		}()
 	}
 }
@@ -246,17 +252,28 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 			}
 			//fmt.Println(label, distance)
 		}
-		_, err = state.db.Exec(`INSERT INTO sentiment_data (post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?)
+		textHashBytes := md5.Sum([]byte(text))
+		textHash := hex.EncodeToString(textHashBytes[:])
+
+		func() {
+			tx, err := state.db.Begin()
+			defer tx.Commit()
+			if err != nil {
+				panic(err)
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
 			ON CONFLICT DO NOTHING`,
-			text, "v1", maxLabel)
-		if err != nil {
-			slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
-		}
-		_, err = state.db.Exec(`INSERT INTO sentiment_events (timestamp, post, sentiment_analyst) VALUES (?, ?, ?)`,
-			time.Now().UnixMilli(), text, "v1")
-		if err != nil {
-			slog.Error("error in db insert", slog.String("err", err.Error()))
-		}
+				textHash, text, "v1", maxLabel)
+			if err != nil {
+				slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
+				time.Now().UnixMilli(), textHash, "v1")
+			if err != nil {
+				slog.Error("error in db insert", slog.String("err", err.Error()))
+			}
+		}()
+
 		// TODO fucking around in design space1
 		//sentimentChannel <- maxLabel
 		func() {
@@ -302,15 +319,16 @@ func main() {
 		embedding text
 	) STRICT;
 	CREATE TABLE IF NOT EXISTS sentiment_data (
-		post text primary key,
+		post_hash text primary key,
+		post text,
 		sentiment_analyst text,
 		sentiment_data text
 	) STRICT;
 	CREATE TABLE IF NOT EXISTS sentiment_events (
 		timestamp integer,
-		post text,
+		post_hash text,
 		sentiment_analyst text,
-		primary key (timestamp, post)
+		primary key (timestamp, post_hash)
 	) STRICT;
 	CREATE TABLE IF NOT EXISTS dot_data (
 		timestamp integer,
