@@ -10,17 +10,24 @@ import (
 )
 
 func Test_CosineSimilarity(t *testing.T) {
-	vec1 := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0)))
-	vec2 := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(1)))
-	sim1, err := CosineSimilarity(vec1, vec1)
-	sim11, err := CosineSimilarity(vec1, vec1)
+
+	vecA := tensor.New(tensor.WithShape(3), tensor.Of(tensor.Float64), tensor.WithBacking([]float64{1, 2, 3}))
+	vecB := tensor.New(tensor.WithShape(3), tensor.Of(tensor.Float64), tensor.WithBacking([]float64{4, 5, 6}))
+	simAB, err := CosineSimilarity2(vecA, vecB)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, simAB, 0.97)
+
+	vec1 := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0.1)))
+	vec2 := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0.9)))
+	sim1, err := CosineSimilarity2(vec1, vec1)
+	sim11, err := CosineSimilarity2(vec1, vec1)
 	assert.NoError(t, err)
 	assert.Equal(t, sim1, sim11)
-	sim2, err := CosineSimilarity(vec1, vec2)
-	sim22, err := CosineSimilarity(vec2, vec1)
+	sim2, err := CosineSimilarity2(vec1, vec2)
+	sim22, err := CosineSimilarity2(vec2, vec1)
 	assert.NoError(t, err)
-	fmt.Println(sim1, sim2)
 	assert.Equal(t, sim2, sim22)
+	fmt.Println(sim1, sim2)
 	assert.NotEqual(t, sim1, sim2)
 
 }

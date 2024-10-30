@@ -194,6 +194,10 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 	events.HandleRepoStream(state.ctx, con, sched)
 }
 
+const EMBEDDING_V1_SIZE = 768
+
+var EMBEDDING_V1_SHAPE = tensor.WithShape(EMBEDDING_V1_SIZE)
+
 func eventProcessor(state *State, eventChannel <-chan string) {
 	primaryEmbeddings := make(map[string]tensor.Tensor)
 	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
@@ -216,7 +220,7 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 		if !ok {
 			panic("failed to convert from any to f64 array")
 		}
-		primaryEmbeddingT := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(embeddingF))
+		primaryEmbeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingF))
 		primaryEmbeddings[label] = primaryEmbeddingT
 	}
 
@@ -224,7 +228,7 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 		text := <-eventChannel
 		slog.Debug("processing event", slog.String("text", text))
 		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, text)
-		embeddingT := tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(embeddingData))
+		embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
 		maxLabel, maxDistance := "", math.Inf(1)
 		//fmt.Println(text)
 		for label, primaryEmbedding := range primaryEmbeddings {
@@ -384,7 +388,7 @@ var SENTIMENT_MAP = map[int]string{
 }
 
 func zeroEmbedding(val float64) []float64 {
-	zeroes := make([]float64, 768)
+	zeroes := make([]float64, EMBEDDING_V1_SIZE)
 	for idx := range zeroes {
 		zeroes[idx] = val
 	}
@@ -411,9 +415,9 @@ func embedEverything(state *State, cfg Config) {
 		positiveCount float64
 	}
 	labelEmbeddings := EmbeddingHolder{
-		negative: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
-		neutral:  tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
-		positive: tensor.New(tensor.WithShape(1, 768), tensor.WithBacking(zeroEmbedding(0))),
+		negative: tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
+		neutral:  tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
+		positive: tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(zeroEmbedding(0))),
 	}
 
 	cli := http.Client{}
@@ -450,7 +454,7 @@ func embedEverything(state *State, cfg Config) {
 					panic(err)
 				}
 			}
-			embeddingT := tensor.New(tensor.WithShape(1, len(embedding)), tensor.WithBacking(embedding))
+			embeddingT := tensor.New(tensor.WithShape(len(embedding)), tensor.WithBacking(embedding))
 			sentiment := SENTIMENT_MAP[int(label)]
 			fmt.Println(label, embeddingT)
 			switch sentiment {
@@ -700,6 +704,54 @@ func hello(c echo.Context) error {
 		value is %.5f
 		<img src="data:image/png;base64,%s" alt="dot historical" />
 	`, dotValue, encodedImg))
+}
+
+// CosineSimilarity calculates the cosine similarity between two vectors `a` and `b`
+func CosineSimilarity2(a, b tensor.Tensor) (float64, error) {
+	// Ensure that `a` and `b` are both 1-dimensional
+	if a.Dims() != 1 || b.Dims() != 1 {
+		return 0, fmt.Errorf("cosine similarity requires 1-dimensional tensors")
+	}
+
+	// Ensure both vectors have the same length
+	if a.Size() != b.Size() {
+		return 0, fmt.Errorf("vectors must have the same size")
+	}
+
+	// Calculate dot product
+	dot, err := tensor.Inner(a, b)
+	if err != nil {
+		return 0, err
+	}
+
+	// Calculate norms of a and b
+	normA := 0.0
+	normB := 0.0
+	for i := 0; i < a.Size(); i++ {
+		va, err := a.At(i)
+		if err != nil {
+			return 0, err
+		}
+		vb, err := b.At(i)
+		if err != nil {
+			return 0, err
+		}
+
+		normA += va.(float64) * va.(float64)
+		normB += vb.(float64) * vb.(float64)
+	}
+	normA = math.Sqrt(normA)
+	normB = math.Sqrt(normB)
+
+	// Avoid division by zero
+	if normA == 0 || normB == 0 {
+		return 0, fmt.Errorf("one of the vectors has zero magnitude. normA=%f, normB=%f", normA, normB)
+	}
+
+	// Calculate cosine similarity
+	cosineSim := dot.(float64) / (normA * normB)
+
+	return cosineSim, nil
 }
 
 func CosineSimilarity(a, b tensor.Tensor) (float64, error) {
