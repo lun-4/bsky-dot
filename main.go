@@ -163,8 +163,14 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 						return nil
 					}
 					slog.Debug("event", slog.String("text", string(recJSON)))
+					postText, ok := rec["text"].(string)
+					if ok {
+						eventChannel <- postText
+					} else {
+						slog.Error("invalid event. expected a text field...", slog.Any("record", rec))
+						panic("invalid post data. exptected text to be a string...")
+					}
 
-					eventChannel <- rec["text"].(string)
 				}
 			}
 
