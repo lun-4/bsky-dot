@@ -77,9 +77,14 @@ func (li *LockedInt) Lock() {
 func (li *LockedInt) Unlock() {
 	li.mut.Unlock()
 }
-func (li *LockedInt) Get() uint {
+func (li *LockedInt) UnlockedGet() uint {
 	return li.ui
+}
 
+func (li *LockedInt) LockAndGet() uint {
+	li.Lock()
+	defer li.Unlock()
+	return li.ui
 }
 
 func (li *LockedInt) Reset() uint {
@@ -99,7 +104,14 @@ type State struct {
 	db               *sql.DB
 }
 
-func eventMetrics(state *State) {
+func (s *State) PrintState() {
+	slog.Info("current state, attempting to lock ints")
+	slog.Info("  incoming", slog.Any("count", s.incomingCounter.LockAndGet()))
+	slog.Info("  processed", slog.Any("count", s.processedCounter.LockAndGet()))
+	slog.Info("  posts", slog.Any("count", s.postCounter.LockAndGet()))
+}
+
+func eventMetrics(state *State, eventChan chan string) {
 	ticker := time.Tick(time.Second * 1)
 	for {
 		<-ticker
@@ -108,8 +120,8 @@ func eventMetrics(state *State) {
 			incoming := state.incomingCounter.Reset()
 			processed := state.processedCounter.Reset()
 			posts := state.postCounter.Reset()
-			log.Printf("%d from upstream, %d posts, %d processed events a second",
-				incoming, posts, processed)
+			log.Printf("%d from upstream, %d posts, %d processed events a second (channel len %d)",
+				incoming, posts, processed, len(eventChan))
 		}()
 	}
 }
@@ -537,6 +549,11 @@ func sentimentProcessor(state *State) {
 				sentiments = append(sentiments, sentimentData)
 			}
 
+			if len(sentiments) == 0 {
+				state.PrintState()
+				panic("no sentiments found... this is a bug...")
+			}
+
 			sentimentCounters := make(map[string]uint)
 			for _, label := range sentiments {
 				sentimentCounters[label]++
@@ -571,6 +588,15 @@ func sentimentProcessor(state *State) {
 
 		}
 	}
+}
+
+type CustomContext struct {
+	echo.Context
+	state *State
+}
+
+func (c *CustomContext) State() *State {
+	return c.state
 }
 
 func run(state *State, cfg Config) {
