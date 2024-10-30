@@ -16,6 +16,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -58,6 +59,7 @@ type Config struct {
 	httpPort     string
 	embeddingUrl string
 	debug        bool
+	numWorkers   uint
 }
 
 func (c *Config) Defaults() {
@@ -114,7 +116,7 @@ func (s *State) PrintState() {
 	slog.Info("  posts", slog.Any("count", s.postCounter.LockAndGet()))
 }
 
-func eventMetrics(state *State, eventChan chan string) {
+func eventMetrics(state *State, eventChan chan Post) {
 	ticker := time.Tick(time.Second * 1)
 	for {
 		<-ticker
@@ -133,7 +135,7 @@ func eventMetrics(state *State, eventChan chan string) {
 	}
 }
 
-func blueskyUpstream(state *State, eventChannel chan string) {
+func blueskyUpstream(state *State, eventChannel chan Post) {
 
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
@@ -159,9 +161,7 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 				if err != nil {
 					return nil
 				}
-				if state.cfg.debug {
-					fmt.Println(rcid)
-				}
+				slog.Debug("event", slog.String("rcid", rcid.String()))
 
 				recordType, recordData, err := data.ExtractTypeCBORReader(bytes.NewReader(*recBytes))
 				if err != nil {
@@ -188,7 +188,9 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 					slog.Debug("event", slog.String("text", string(recJSON)))
 					postText, ok := rec["text"].(string)
 					if ok {
-						eventChannel <- postText
+						textHashBytes := md5.Sum([]byte(postText))
+						textHash := hex.EncodeToString(textHashBytes[:])
+						eventChannel <- Post{text: postText, hash: textHash}
 					} else {
 						slog.Error("invalid event. expected a text field...", slog.Any("record", rec))
 						panic("invalid post data. exptected text to be a string...")
@@ -204,11 +206,16 @@ func blueskyUpstream(state *State, eventChannel chan string) {
 	events.HandleRepoStream(state.ctx, con, sched)
 }
 
+type Post struct {
+	text string
+	hash string
+}
+
 const EMBEDDING_V1_SIZE = 768
 
 var EMBEDDING_V1_SHAPE = tensor.WithShape(EMBEDDING_V1_SIZE)
 
-func eventProcessor(state *State, eventChannel <-chan string) {
+func eventProcessor(state *State, eventChannel <-chan Post) {
 	primaryEmbeddings := make(map[string]tensor.Tensor)
 	rows, err := state.db.Query(`SELECT label, embedding FROM primary_sentiment_vectors`)
 	if err != nil {
@@ -235,9 +242,9 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 	}
 
 	for {
-		text := <-eventChannel
-		slog.Debug("processing event", slog.String("text", text))
-		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, text)
+		post := <-eventChannel
+		slog.Debug("processing event", slog.String("text", post.text))
+		embeddingData := getUpstreamEmbedding(state.cfg, http.Client{}, post.text)
 		embeddingT := tensor.New(EMBEDDING_V1_SHAPE, tensor.WithBacking(embeddingData))
 		maxLabel, maxDistance := "", math.Inf(1)
 		//fmt.Println(text)
@@ -252,8 +259,6 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 			}
 			//fmt.Println(label, distance)
 		}
-		textHashBytes := md5.Sum([]byte(text))
-		textHash := hex.EncodeToString(textHashBytes[:])
 
 		func() {
 			tx, err := state.db.Begin()
@@ -263,12 +268,12 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 			}
 			_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
 			ON CONFLICT DO NOTHING`,
-				textHash, text, "v1", maxLabel)
+				post.hash, post.text, "v1", maxLabel)
 			if err != nil {
 				slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
 			}
 			_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
-				time.Now().UnixMilli(), textHash, "v1")
+				time.Now().UnixMilli(), post.hash, "v1")
 			if err != nil {
 				slog.Error("error in db insert", slog.String("err", err.Error()))
 			}
@@ -284,6 +289,26 @@ func eventProcessor(state *State, eventChannel <-chan string) {
 	}
 }
 
+func parseUint(v string) uint {
+	if v == "" {
+		panic("empty value")
+	}
+	vInt, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	return uint(vInt)
+}
+
+func getEnvUint(key string, defaultValue uint) uint {
+	value := os.Getenv(key)
+	if value == "" {
+		value = fmt.Sprintf("%d", defaultValue)
+	}
+	valueUint := parseUint(value)
+	return valueUint
+}
+
 func main() {
 	cfg := Config{
 		databasePath: "./dot.db",
@@ -291,6 +316,7 @@ func main() {
 		httpPort:     os.Getenv("HTTP_PORT"),
 		debug:        os.Getenv("DEBUG") != "",
 		embeddingUrl: os.Getenv("LLAMACPP_EMBEDDING_URL"),
+		numWorkers:   getEnvUint("NUM_WORKERS", 3),
 	}
 	cfg.Defaults()
 	if len(os.Args) < 2 {
@@ -553,22 +579,21 @@ func sentimentProcessor(state *State) {
 		case <-ticker:
 			// get all sentiments from the past minute
 			slog.Info("computing sentiments..")
-			rows, err := state.db.Query(`SELECT post, sentiment_analyst FROM sentiment_events WHERE timestamp > ?`,
-				time.Now().Add(-timePeriod).UnixMilli())
+			rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and sentiment_analyst = ?`,
+				time.Now().Add(-timePeriod).UnixMilli(), "v1")
 			if err != nil {
 				panic(err)
 			}
 			sentiments := make([]string, 0)
 			for rows.Next() {
 				var post string
-				var analyst string
-				err := rows.Scan(&post, &analyst)
+				err := rows.Scan(&post)
 				if err != nil {
 					panic(err)
 				}
 
 				// for each event, get its sentiment (this should be a join maybe)
-				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post=? AND sentiment_analyst=?`, post, analyst)
+				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, post, "v1")
 				var sentimentData string
 				err = row.Scan(&sentimentData)
 				if err != nil {
@@ -578,6 +603,7 @@ func sentimentProcessor(state *State) {
 			}
 
 			if len(sentiments) == 0 {
+				slog.Error("no sentiments found, this is a bug!")
 				state.PrintState()
 				panic("no sentiments found... this is a bug...")
 			}
@@ -628,7 +654,7 @@ func (c *CustomContext) State() *State {
 }
 
 func run(state *State, cfg Config) {
-	eventChannel := make(chan string, 1000)
+	eventChannel := make(chan Post, 1000)
 	//sentimentChannel := make(chan string, 1000)
 
 	if cfg.upstreamType == UpstreamType_BLUESKY {
@@ -638,8 +664,10 @@ func run(state *State, cfg Config) {
 	}
 
 	go eventMetrics(state, eventChannel)
-	go eventProcessor(state, eventChannel) //, sentimentChannel)
-	go sentimentProcessor(state)           //, sentimentChannel)
+	for range state.cfg.numWorkers {
+		go eventProcessor(state, eventChannel) //, sentimentChannel)
+	}
+	go sentimentProcessor(state) //, sentimentChannel)
 
 	e := echo.New()
 
