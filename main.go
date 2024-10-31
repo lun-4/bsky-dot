@@ -213,6 +213,17 @@ type Post struct {
 }
 
 func eventProcessor(state *State, eventChannel <-chan Post) {
+	switch state.cfg.embeddingVersion {
+	case "v1":
+		eventProcessor_V1(state, eventChannel)
+	case "v3":
+		eventProcessor_V3(state, eventChannel)
+	default:
+		panic("invalid embedding version...")
+	}
+}
+
+func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 	primaryEmbeddings := getPrimaryEmbeddings_V1(state)
 
 	for {
@@ -234,6 +245,42 @@ func eventProcessor(state *State, eventChannel <-chan Post) {
 			}
 			_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
 				time.Now().UnixMilli(), post.hash, "v1")
+			if err != nil {
+				slog.Error("error in db insert", slog.String("err", err.Error()))
+			}
+		}()
+
+		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
+		//sentimentChannel <- sentiment
+		func() {
+			state.processedCounter.Lock()
+			defer state.processedCounter.Unlock()
+			state.processedCounter.ui++
+		}()
+	}
+}
+
+func eventProcessor_V3(state *State, eventChannel <-chan Post) {
+
+	for {
+		post := <-eventChannel
+		slog.Debug("processing event", slog.String("text", post.text))
+		sentiment := sentimentFromText_V3(state.cfg, post.text)
+
+		func() {
+			tx, err := state.db.Begin()
+			defer tx.Commit()
+			if err != nil {
+				panic(err)
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
+			ON CONFLICT DO NOTHING`,
+				post.hash, post.text, "v3", sentiment)
+			if err != nil {
+				slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
+				time.Now().UnixMilli(), post.hash, "v3")
 			if err != nil {
 				slog.Error("error in db insert", slog.String("err", err.Error()))
 			}
@@ -276,7 +323,7 @@ func main() {
 		httpPort:         os.Getenv("HTTP_PORT"),
 		debug:            os.Getenv("DEBUG") != "",
 		embeddingUrl:     os.Getenv("LLAMACPP_EMBEDDING_URL"),
-		embeddingVersion: "v2",
+		embeddingVersion: "v3",
 		numWorkers:       getEnvUint("NUM_WORKERS", 3),
 	}
 	cfg.Defaults()

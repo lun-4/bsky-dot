@@ -23,4 +23,10 @@ var EMBEDDING_META = map[string]Embedding{
 		model: "nomic-embed-text-v1.5.Q8_0.gguf",
 		size:  768,
 	},
+	"v3": {
+		name:  "v3",
+		model: "cardiffnlp/twitter-roberta-base-sentiment-latest",
+		// its the sentiment model directly
+		size: 0,
+	},
 }

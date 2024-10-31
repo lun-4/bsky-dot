@@ -5,6 +5,11 @@ defmodule DotRunnerWeb.Router do
     plug :accepts, ["json"]
   end
 
+  scope "/v1", DotRunnerWeb do
+    pipe_through :api
+    get("/models", InferController, :models)
+  end
+
   scope "/api/v1", DotRunnerWeb do
     pipe_through :api
     post("/sentiment", InferController, :sentiment)
