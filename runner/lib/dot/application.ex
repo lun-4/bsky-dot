@@ -18,7 +18,7 @@ defmodule DotRunner.Application do
     serving =
       Bumblebee.Text.text_classification(model_info, tokenizer,
         top_k: 1,
-        compile: [batch_size: 4, sequence_length: 100],
+        compile: [batch_size: 1, sequence_length: 2],
         defn_options: [
           compiler: EXLA,
           cache: Path.join(System.tmp_dir!(), "bumblebee_examples/text_classification")

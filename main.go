@@ -652,9 +652,9 @@ func sentimentProcessor(state *State) {
 			}
 
 			if len(sentiments) == 0 {
-				slog.Error("no sentiments found, this is a bug!")
+				slog.Error("no sentiments found!!!!! problem!!! (workers died or not running fast enough)")
 				state.PrintState()
-				panic("no sentiments found... this is a bug...")
+				panic("no sentiments found...")
 			}
 
 			sentimentCounters := make(map[string]uint)
