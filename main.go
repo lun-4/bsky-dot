@@ -629,7 +629,7 @@ func sentimentProcessor(state *State) {
 			// get all sentiments from the past minute
 			slog.Info("computing sentiments..")
 			rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and sentiment_analyst = ?`,
-				time.Now().Add(-timePeriod).UnixMilli(), "v1")
+				time.Now().Add(-timePeriod).UnixMilli(), state.cfg.embeddingVersion)
 			if err != nil {
 				panic(err)
 			}
@@ -642,7 +642,7 @@ func sentimentProcessor(state *State) {
 				}
 
 				// for each event, get its sentiment (this should be a join maybe)
-				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, post, "v1")
+				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, post, state.cfg.embeddingVersion)
 				var sentimentData string
 				err = row.Scan(&sentimentData)
 				if err != nil {
