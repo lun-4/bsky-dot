@@ -667,18 +667,19 @@ func sentimentProcessor(state *State) {
 			}
 			sentiments := make([]string, 0)
 			for rows.Next() {
-				var post string
-				err := rows.Scan(&post)
+				var postHash string
+				err := rows.Scan(&postHash)
 				if err != nil {
 					panic(err)
 				}
 
 				// for each event, get its sentiment (this should be a join maybe)
-				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, post, state.cfg.embeddingVersion)
+				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, state.cfg.embeddingVersion)
 				var sentimentData string
 				err = row.Scan(&sentimentData)
 				if err != nil {
-					panic(err)
+					slog.Error("no sentiment data found in sentiment_data table", slog.String("postHash", postHash))
+					continue
 				}
 				sentiments = append(sentiments, sentimentData)
 			}
