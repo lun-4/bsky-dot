@@ -187,8 +187,39 @@ func blueskyUpstream(state *State, eventChannel chan Post) {
 						return nil
 					}
 					slog.Debug("event", slog.String("text", string(recJSON)))
+					// ignore non-english to prevent model crashes
+					if rec["langs"] != nil {
+						langs := rec["langs"].([]any)
+						if len(langs) > 0 {
+							primaryLang := langs[0].(string)
+							if primaryLang != "en" {
+								return nil
+							}
+						}
+					}
+
 					postText, ok := rec["text"].(string)
 					if ok {
+
+						if postText == "" {
+							return nil
+						}
+
+						// it might be english, but still be absolutely fucked, example:
+						// ᴀᴡᴡ, ʏᴏᴜ ᴡᴇʀᴇ ᴛᴏᴏ ꜱᴄᴀʀᴇᴅ ᴛᴏ ᴀᴅᴍɪᴛ ʏᴏᴜ ʜᴀᴠᴇ ᴀ ᴄʀᴜꜱʜ ᴏɴ ᴍᴇ? ᴀꜱ ɪꜰ ɪ ᴅɪᴅɴ’ᴛ ᴋɴᴏᴡ, ʏᴏᴜ’ʀᴇ ꜱᴏ ᴏʙᴠɪᴏᴜꜱ ᴡʜᴇɴ ʏᴏᴜ ꜱᴛᴀʀᴇ ꜱᴏᴍᴇᴛɪᴍᴇꜱ ɪ ᴛʜɪɴᴋ ɪ’ʟʟ ʜᴀᴠᴇ ᴛᴏ ᴡɪᴘᴇ ʏᴏᴜʀ ᴅʀᴏᴏʟ ᴀᴡᴀʏ…ʙᴜᴛ ᴡᴇ ᴄᴏᴜʟᴅ ᴀʟᴡᴀʏꜱ ᴀᴅᴅ ᴍᴏʀᴇ ɪɴꜱᴛᴇᴀᴅ. ɪꜰ ʏᴏᴜ ʀᴇᴀʟʟʏ ʟɪᴋᴇ ᴍᴇ, ᴏᴘᴇɴ ᴜᴘ ᴀɴᴅ ᴛᴀᴋᴇ ᴛʜɪꜱ ꜱᴘɪᴛ, ʟᴏꜱᴇʀ.
+						asciiCount := 0
+						for _, r := range postText {
+							if r <= 127 { // ASCII characters are 0-127
+								asciiCount++
+							}
+						}
+
+						ratio := float64(asciiCount) / float64(len(postText))
+						if ratio < 0.5 {
+							return nil
+
+						}
+
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
 						eventChannel <- Post{text: postText, hash: textHash}
