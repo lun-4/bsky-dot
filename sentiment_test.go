@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_SentimentFromText_V1(t *testing.T) {
+func _Test_SentimentFromText_V1(t *testing.T) {
 	cfg := Config{
 		databasePath: "./dot.db",
 		upstreamType: UpstreamType_BLUESKY,
@@ -65,7 +65,8 @@ func Test_SentimentFromText_V1(t *testing.T) {
 		})
 	}
 }
-func Test_SentimentFromText_V2(t *testing.T) {
+
+func _Test_SentimentFromText_V2(t *testing.T) {
 	cfg := Config{
 		databasePath: "./dot.db",
 		upstreamType: UpstreamType_BLUESKY,
@@ -116,6 +117,52 @@ func Test_SentimentFromText_V2(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.text, func(t *testing.T) {
 			got := sentimentFromText_V2(fakeState.cfg, tt.text, primaryEmbeddings)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func Test_SentimentFromText_V3(t *testing.T) {
+	cfg := Config{
+		databasePath: "./dot.db",
+		upstreamType: UpstreamType_BLUESKY,
+		httpPort:     "n/a",
+		debug:        true,
+		embeddingUrl: os.Getenv("LLAMACPP_EMBEDDING_URL"),
+		numWorkers:   0,
+	}
+	cfg.Defaults()
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
+	ctx := context.Background()
+
+	fakeState := &State{
+		cfg: cfg,
+		ctx: ctx,
+		db:  nil,
+	}
+
+	tests := []struct {
+		text string
+		want string
+	}{
+		{
+			text: "i love the world",
+			want: "positive",
+		},
+		{
+			text: "i hate the world",
+			want: "negative",
+		},
+		{
+			text: "i am fine",
+			want: "positive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.text, func(t *testing.T) {
+			got := sentimentFromText_V3(fakeState.cfg, tt.text)
 			assert.Equal(t, tt.want, got)
 		})
 	}
