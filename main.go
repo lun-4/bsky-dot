@@ -171,11 +171,6 @@ func blueskyUpstream(state *State, eventChannel chan Post) {
 
 				switch recordType {
 				case "app.bsky.feed.post":
-					func() {
-						state.postCounter.Lock()
-						defer state.postCounter.Unlock()
-						state.postCounter.ui++
-					}()
 
 					rec, err := data.UnmarshalCBOR(recordData)
 					if err != nil {
@@ -222,6 +217,12 @@ func blueskyUpstream(state *State, eventChannel chan Post) {
 
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
+
+						func() {
+							state.postCounter.Lock()
+							defer state.postCounter.Unlock()
+							state.postCounter.ui++
+						}()
 						eventChannel <- Post{text: postText, hash: textHash}
 					} else {
 						slog.Error("invalid event. expected a text field...", slog.Any("record", rec))
