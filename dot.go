@@ -39,7 +39,7 @@ func dotTest(state *State) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
 		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
-			startT.Unix(), endT.Unix(), "v3")
+			startT.UnixMilli(), endT.UnixMilli(), "v3")
 		if err != nil {
 			panic(err)
 		}
@@ -68,6 +68,7 @@ func dotTest(state *State) {
 			fmt.Println(t, dotState.d)
 		} else {
 			dotValues = append(dotValues, dotState.d)
+			fmt.Println(t, "no sentiments")
 		}
 	}
 	fmt.Println(dotState.d)
@@ -127,7 +128,7 @@ func dotBackfill(state *State) {
 		}
 
 		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
-			startT.Unix(), endT.Unix(), "v3")
+			startT.UnixMilli(), endT.UnixMilli(), "v3")
 		if err != nil {
 			panic(err)
 		}
@@ -213,9 +214,14 @@ func dotProcessor(state *State) {
 
 	now := time.Now()
 	startAll, _ := lastDot(state)
-	// if it's been over a minute, we need to backfill until the best timestamp, then backfill ourselves minute by minute
-	if now.Sub(startAll).Seconds() > time.Duration(1*time.Minute).Seconds() {
+	// if it's been over 30 minutes, we need to backfill until the best timestamp, then backfill ourselves minute by minute
+	delta := now.Sub(startAll).Seconds()
+	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
+	if delta > time.Duration(30*time.Minute).Seconds() {
+		slog.Info("backfilling!")
 		dotBackfill(state)
+	} else {
+		slog.Info("not backfilling")
 	}
 
 	dot := NewDotV1()
@@ -244,7 +250,7 @@ func dotProcessor(state *State) {
 				// we're in a chunk [startT, endT], compute sentiments and set dot value on startT!
 				slog.Info("computing sentiments..")
 				rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp >= ? and timestamp <= ? and sentiment_analyst = ?`,
-					startT, endT, state.cfg.embeddingVersion)
+					startT.UnixMilli(), endT.UnixMilli(), state.cfg.embeddingVersion)
 				if err != nil {
 					panic(err)
 				}
