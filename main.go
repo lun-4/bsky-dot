@@ -423,6 +423,8 @@ func main() {
 		embedEverything_V2(&state, cfg)
 	case "run":
 		run(&state, cfg)
+	case "test-dot-algo":
+		testDotAlgorithm(&state)
 	default:
 		fmt.Println("Usage: bskydot [embed-everything-v1 | embed-everything-v2 | run]")
 	}
