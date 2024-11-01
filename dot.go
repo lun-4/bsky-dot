@@ -47,7 +47,7 @@ func testDotAlgorithm(state *State) {
 			dotValues = append(dotValues, dotState.d)
 			fmt.Println(t, dotState.d)
 		} else {
-			dotValues = append(dotValues, 0.0)
+			dotValues = append(dotValues, dotState.d)
 		}
 	}
 	fmt.Println(dotState.d)
