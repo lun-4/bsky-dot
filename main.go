@@ -210,9 +210,8 @@ func blueskyUpstream(state *State, eventChannel chan Post) {
 						}
 
 						ratio := float64(asciiCount) / float64(len(postText))
-						if ratio < 0.5 {
+						if ratio < 0.3 {
 							return nil
-
 						}
 
 						textHashBytes := md5.Sum([]byte(postText))
@@ -752,7 +751,7 @@ func run(state *State, cfg Config) {
 	for range state.cfg.numWorkers {
 		go eventProcessor(state, eventChannel) //, sentimentChannel)
 	}
-	go sentimentProcessor(state) //, sentimentChannel)
+	//go sentimentProcessor(state) //, sentimentChannel)
 
 	e := echo.New()
 
@@ -782,7 +781,11 @@ func GetCurrentDot(state *State) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	dv := dotData["v"].(float64)
+	dv, ok := dotData["d"].(float64)
+	if !ok {
+		slog.Error("invalid dot data", slog.String("data", dotDataEncoded))
+		panic("invalid dot value")
+	}
 	return dv, nil
 }
 
@@ -804,7 +807,7 @@ func GetLastCoupleDots(state *State) ([]float64, error) {
 		if err != nil {
 			return nil, err
 		}
-		dv := dotData["v"].(float64)
+		dv := dotData["d"].(float64)
 		dots = append(dots, dv)
 	}
 	return dots, nil

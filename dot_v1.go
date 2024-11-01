@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -16,7 +15,6 @@ func NewDotV1() DotV1 {
 }
 
 func (d *DotV1) TimePeriod() time.Duration {
-
 	return 1 * time.Minute
 }
 
@@ -31,18 +29,16 @@ func (d *DotV1) Forward(sentiments []string) error {
 		proportions[sentiment] = proportion
 	}
 
-	fmt.Println("proportions:", proportions)
 	sumProportions := 0.0
 
 	epsilon := 0.005 // a small value to increase/decrease the dot on each time step
-	for label, proportion := range proportions {
+	for _, proportion := range proportions {
 		sumProportions += proportion
 		// NOTE this is a very special magical number whose tweaking leads to collapses on
 		// either side of the dot spectrum (either everyone stays at 0 because no sentiment can breach the threshold,
 		// or everyone's a 1 because a sentiment wins at every timestamp)
 		if proportion > 0.405 {
 			// the network is converging itself towards a common goal, increase dot by epsilon
-			fmt.Println(label)
 			d.d = limitDot(d.d + epsilon)
 			return nil
 		}
