@@ -9,7 +9,7 @@ import (
 
 func testDotAlgorithm(state *State) {
 	now := time.Now()
-	startAll := now.Add(-24 * time.Hour)
+	startAll := now.Add(-48 * time.Hour)
 	//startAll := now.Add(-1 * time.Hour)
 	endAll := now
 
@@ -46,6 +46,8 @@ func testDotAlgorithm(state *State) {
 			dotState.Forward(sentiments)
 			dotValues = append(dotValues, dotState.d)
 			fmt.Println(t, dotState.d)
+		} else {
+			dotValues = append(dotValues, 0.0)
 		}
 	}
 	fmt.Println(dotState.d)
