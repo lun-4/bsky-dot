@@ -177,10 +177,13 @@ func dotBackfill(state *State) {
 }
 
 func lastDot(state *State) (time.Time, float64) {
-	row := state.db.QueryRow(`SELECT max(timestamp), data FROM dot_data WHERE dot_analyst = ?`, "v1")
+	row := state.db.QueryRow(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 1`, "v1")
 	var maxTimestamp int64
 	var dotDataEncoded string
 	err := row.Scan(&maxTimestamp, &dotDataEncoded)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, 0
+	}
 	if err != nil {
 		panic(err)
 	}
