@@ -29,11 +29,8 @@ func (d *DotV1) Forward(sentiments []string) error {
 		proportions[sentiment] = proportion
 	}
 
-	sumProportions := 0.0
-
 	epsilon := 0.005 // a small value to increase/decrease the dot on each time step
 	for _, proportion := range proportions {
-		sumProportions += proportion
 		// NOTE this is a very special magical number whose tweaking leads to collapses on
 		// either side of the dot spectrum (either everyone stays at 0 because no sentiment can breach the threshold,
 		// or everyone's a 1 because a sentiment wins at every timestamp)
