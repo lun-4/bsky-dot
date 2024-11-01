@@ -789,15 +789,21 @@ func GetCurrentDot(state *State) (float64, error) {
 	return dv, nil
 }
 
-func GetLastCoupleDots(state *State) ([]float64, error) {
-	rows, err := state.db.Query(`SELECT data FROM dot_data ORDER BY timestamp DESC LIMIT 100`)
+type Dot struct {
+	UnixTimestamp int64
+	Value         float64
+}
+
+func GetLastCoupleDots(state *State) ([]Dot, error) {
+	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data ORDER BY timestamp DESC LIMIT 1500`)
 	if err != nil {
 		return nil, err
 	}
-	dots := make([]float64, 0)
+	dots := make([]Dot, 0)
 	for rows.Next() {
+		var dot Dot
 		var dotDataEncoded string
-		err := rows.Scan(&dotDataEncoded)
+		err := rows.Scan(&dot.UnixTimestamp, &dotDataEncoded)
 		if err != nil {
 			return nil, err
 		}
@@ -807,8 +813,8 @@ func GetLastCoupleDots(state *State) ([]float64, error) {
 		if err != nil {
 			return nil, err
 		}
-		dv := dotData["d"].(float64)
-		dots = append(dots, dv)
+		dot.Value = dotData["d"].(float64)
+		dots = append(dots, dot)
 	}
 	return dots, nil
 }

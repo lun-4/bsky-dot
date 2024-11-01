@@ -10,16 +10,16 @@ import (
 )
 
 // randomPoints returns some random x, y points.
-func toXY(data []float64) plotter.XYs {
+func toXY(data []Dot) plotter.XYs {
 	pts := make(plotter.XYs, len(data))
 	for index, dot := range data {
-		pts[index].X = float64(index)
-		pts[index].Y = dot
+		pts[index].X = float64(dot.UnixTimestamp)
+		pts[index].Y = dot.Value
 	}
 	return pts
 }
 
-func GenerateDotPlot(dotData []float64) (string, error) {
+func GenerateDotPlot(dotData []Dot) (string, error) {
 	p := plot.New()
 
 	p.Title.Text = "bsky dot"

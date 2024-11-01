@@ -34,7 +34,7 @@ func dotTest(state *State) {
 	endAll := now
 
 	dotState := NewDotV1()
-	dotValues := make([]float64, 0)
+	dotValues := make([]Dot, 0)
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
@@ -64,10 +64,10 @@ func dotTest(state *State) {
 
 		if len(sentiments) > 0 {
 			dotState.Forward(sentiments)
-			dotValues = append(dotValues, dotState.d)
+			dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.d})
 			fmt.Println(t, dotState.d)
 		} else {
-			dotValues = append(dotValues, dotState.d)
+			dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.d})
 			fmt.Println(t, "no sentiments")
 		}
 	}
