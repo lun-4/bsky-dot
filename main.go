@@ -751,7 +751,7 @@ func run(state *State, cfg Config) {
 	for range state.cfg.numWorkers {
 		go eventProcessor(state, eventChannel) //, sentimentChannel)
 	}
-	//go sentimentProcessor(state) //, sentimentChannel)
+	go dotProcessor(state)
 
 	e := echo.New()
 
