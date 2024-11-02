@@ -686,6 +686,7 @@ func storePrimaryEmbedding(state *State, sentiment string, primaryEmbedding tens
 	}
 }
 
+// NOTE: this is unused and should be removed very soon
 func sentimentProcessor(state *State) {
 	//sentimentCounters := make(map[string]uint)
 	//ticker := time.Tick(1 * time.Minute)
