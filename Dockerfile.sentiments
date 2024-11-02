@@ -1,0 +1,7 @@
+FROM python:3.12-bookworm
+RUN pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+ADD testrunner-requirements.txt /src/requirements.txt
+WORKDIR /src
+RUN pip install -Ur requirements.txt
+ADD testrunner.py /src/runner.py
+CMD ["flask", "--app", "runner", "run", "--host", "0.0.0.0"]

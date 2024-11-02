@@ -1,0 +1,4 @@
+optimum[exporters]==1.23.3
+transformers==4.46.1
+scipy==1.14.1
+flask==3.0.3
