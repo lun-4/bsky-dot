@@ -22,6 +22,8 @@ func testDotAlgorithm(state *State) {
 		dotTest(state)
 	case "backfill":
 		dotBackfill(state)
+	case "validate-timestamps":
+		dotValidateTimestamps(state)
 	default:
 		slog.Error("Invalid action")
 	}
@@ -335,4 +337,35 @@ func dotProcessor(state *State) {
 			}
 		}
 	}
+}
+
+func dotValidateTimestamps(state *State) {
+	rows, err := state.db.Query(`SELECT timestamp FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp ASC`, "v1")
+	if err != nil {
+		panic(err)
+	}
+
+	var lastTimestamp int64
+	for rows.Next() {
+		var timestamp int64
+		err := rows.Scan(&timestamp)
+		if err != nil {
+			panic(err)
+		}
+		t := time.Unix(timestamp, 0)
+		slog.Info("validating", slog.Int64("timestamp", timestamp))
+		assertGoodDotTimestamp(t)
+
+		delta := timestamp - lastTimestamp
+		if lastTimestamp != 0 {
+			if delta != 60 {
+				panic(fmt.Sprintf("bad timestamp %d, delta %d", timestamp, delta))
+			}
+		}
+		lastTimestamp = timestamp
+
+		slog.Info("validated", slog.Int64("timestamp", timestamp), slog.Int64("delta", delta))
+	}
+
+	slog.Info("timestamp validation complete")
 }
