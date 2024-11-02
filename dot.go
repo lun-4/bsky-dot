@@ -37,6 +37,14 @@ func assertGoodDotTimestamp(t time.Time) {
 		panic("Non zero nanosecond in time")
 	}
 }
+func assertGoodDotDelta(lastT, incomingT time.Time) {
+	dur := incomingT.Sub(lastT)
+
+	if dur.Seconds() != 60 {
+		slog.Error("Non zero second in time delta...", slog.Float64("delta", dur.Seconds()))
+		panic("Non zero second in time delta...")
+	}
+}
 
 func dotTest(state *State) {
 	now := time.Now()
@@ -50,6 +58,7 @@ func dotTest(state *State) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
 		assertGoodDotTimestamp(startT)
+		assertGoodDotTimestamp(endT)
 		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
 			startT.UnixMilli(), endT.UnixMilli(), "v3")
 		if err != nil {
@@ -130,6 +139,7 @@ func dotBackfill(state *State) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
 		assertGoodDotTimestamp(startT)
+		assertGoodDotTimestamp(endT)
 
 		row := state.db.QueryRow(`SELECT data FROM dot_data WHERE timestamp = ? AND dot_analyst = ?`, startT.Unix(), "v1")
 		var maybeData string
@@ -269,21 +279,23 @@ func dotProcessor(state *State) {
 			lastDotTimestamp, lastDotValue, ok := lastDot(state)
 			eventTimestamp := maxEventTimestamp(state)
 			if !ok {
-				lastDotTimestamp, ok = minEventTimestamp(state)
-				if !ok {
-					lastDotTimestamp = time.Now()
-				}
+				panic("no dot data, please run the backfill task first")
 			}
+			assertGoodDotTimestamp(lastDotTimestamp)
 
 			lastDotState := DotV1{d: lastDotValue}
 
-			for t := lastDotTimestamp; t.Before(eventTimestamp); t = t.Add(2 * dot.TimePeriod()) {
+			lastProcessedTimestamp := lastDotTimestamp
+
+			for t := lastDotTimestamp; t.Before(eventTimestamp); t = t.Add(1 * dot.TimePeriod()) {
 				startT := t
+				assertGoodDotDelta(lastProcessedTimestamp, startT)
 				endT := t.Add(dot.TimePeriod())
 				if endT.After(eventTimestamp) {
 					break
 				}
 				assertGoodDotTimestamp(startT)
+				assertGoodDotTimestamp(endT)
 
 				// we're in a chunk [startT, endT], compute sentiments and set dot value on startT!
 				slog.Info("computing sentiments..")
@@ -334,6 +346,7 @@ func dotProcessor(state *State) {
 				if err != nil {
 					panic(err)
 				}
+				lastProcessedTimestamp = startT
 			}
 		}
 	}
