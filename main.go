@@ -255,12 +255,12 @@ type Post struct {
 	hash string
 }
 
-func eventProcessor(state *State, eventChannel <-chan Post) {
+func eventProcessor(state *State, eventChannel <-chan Post, upstreamUrl string) {
 	switch state.cfg.embeddingVersion {
 	case "v1":
 		eventProcessor_V1(state, eventChannel)
 	case "v3":
-		eventProcessor_V3(state, eventChannel)
+		eventProcessor_V3(state, eventChannel, upstreamUrl)
 	default:
 		panic("invalid embedding version...")
 	}
@@ -303,12 +303,14 @@ func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 	}
 }
 
-func eventProcessor_V3(state *State, eventChannel <-chan Post) {
+func eventProcessor_V3(state *State, eventChannel <-chan Post, upstreamUrl string) {
 
+	newCfg := state.cfg
+	newCfg.embeddingUrl = upstreamUrl
 	for {
 		post := <-eventChannel
 		slog.Debug("processing event", slog.String("text", post.text))
-		sentiment := sentimentFromText_V3(state.cfg, post.text)
+		sentiment := sentimentFromText_V3(newCfg, post.text)
 
 		func() {
 			tx, err := state.db.Begin()
@@ -386,7 +388,6 @@ func main() {
 	wrt := io.MultiWriter(os.Stderr, f)
 
 	log.SetOutput(wrt)
-	log.Println("This is a test log entry")
 
 	ctx := context.Background()
 	db, err := sql.Open("sqlite3", cfg.databasePath)
@@ -789,8 +790,19 @@ func run(state *State, cfg Config) {
 
 	go eventMetrics(state, eventChannel, restartWorkerChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
-	for range state.cfg.numWorkers {
-		go eventProcessor(state, eventChannel) //, sentimentChannel)
+
+	urls := make([]string, 0)
+	if strings.Contains(cfg.embeddingUrl, ",") {
+		urls = strings.Split(cfg.embeddingUrl, ",")
+	} else {
+		urls = append(urls, cfg.embeddingUrl)
+	}
+
+	for _, url := range urls {
+		for idx := range state.cfg.numWorkers {
+			slog.Info("spawn worker", slog.Uint64("index", uint64(idx)), slog.String("url", url))
+			go eventProcessor(state, eventChannel, url)
+		}
 	}
 	go dotProcessor(state)
 
