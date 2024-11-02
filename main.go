@@ -888,6 +888,7 @@ func hello(c echo.Context) error {
 		<h1>the bluesky dot</h1>
 		<h2>a funny experiment on the firehose and processing data at scale<h2>
 		<h3>by <a href="https://bsky.app/profile/l4.pm">@l4.pm</a></h3>
+		<h4>i am not good at web design and i had a self-imposed deadline to finish this. it is what it is.</h4>
 		<p>the current value is %.5f</p>
 		<p>the closer to 0, the more the network is random, the closer to 1, the more the network is focused on feeling good or feeling bad</p>
 		<p>last couple hours</p>
