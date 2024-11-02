@@ -238,7 +238,12 @@ func blueskyUpstream(state *State, eventChannel chan Post) {
 		},
 	}
 	sched := sequential.NewScheduler("myfirehose", rsc.EventHandler)
-	events.HandleRepoStream(state.ctx, con, sched)
+	//ctx, cancel := context.WithTimeout(state.ctx, time.Duration(time.Second*10))
+	//defer cancel()
+	err = events.HandleRepoStream(state.ctx, con, sched)
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 type Post struct {
