@@ -287,7 +287,7 @@ func dotProcessor(state *State) {
 
 			lastProcessedTimestamp := lastDotTimestamp
 
-			for t := lastDotTimestamp; t.Before(eventTimestamp); t = t.Add(1 * dot.TimePeriod()) {
+			for t := lastDotTimestamp.Add(dot.TimePeriod()); t.Before(eventTimestamp); t = t.Add(dot.TimePeriod()) {
 				startT := t
 				assertGoodDotDelta(lastProcessedTimestamp, startT)
 				endT := t.Add(dot.TimePeriod())
