@@ -368,6 +368,17 @@ func main() {
 	if cfg.debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
+	f, err := os.OpenFile("dot.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("error opening file: %v", err)
+	}
+	defer f.Close()
+
+	wrt := io.MultiWriter(os.Stderr, f)
+
+	log.SetOutput(wrt)
+	log.Println("This is a test log entry")
+
 	ctx := context.Background()
 	db, err := sql.Open("sqlite3", cfg.databasePath)
 	if err != nil {
