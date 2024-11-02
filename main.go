@@ -70,6 +70,9 @@ func (c *Config) Defaults() {
 	if c.httpPort == "" {
 		c.httpPort = "8080"
 	}
+	if c.databasePath == "" {
+		c.databasePath = "./dot.db"
+	}
 }
 
 type LockedInt struct {
@@ -349,7 +352,7 @@ func getEnvUint(key string, defaultValue uint) uint {
 
 func main() {
 	cfg := Config{
-		databasePath:     "./dot.db",
+		databasePath:     os.Getenv("DATABASE_PATH"),
 		upstreamType:     upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
 		httpPort:         os.Getenv("HTTP_PORT"),
 		debug:            os.Getenv("DEBUG") != "",
