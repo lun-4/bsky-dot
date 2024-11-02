@@ -885,8 +885,12 @@ func hello(c echo.Context) error {
 	encodedImg := base64.StdEncoding.EncodeToString(data)
 	c.Response().Header().Set("content-type", "text/html")
 	return c.HTML(http.StatusOK, fmt.Sprintf(`
-		<h1>the dot</h1>
-		value is %.5f
+		<h1>the bluesky dot</h1>
+		<h2>a funny experiment on the firehose and processing data at scale<h2>
+		<h3>by <a href="https://bsky.app/profile/l4.pm">@l4.pm</a></h3>
+		<p>the current value is %.5f</p>
+		<p>the closer to 0, the more the network is random, the closer to 1, the more the network is focused on feeling good or feeling bad</p>
+		<p>last couple hours</p>
 		<img src="data:image/png;base64,%s" alt="dot historical" />
 	`, dotValue, encodedImg))
 }
