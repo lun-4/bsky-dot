@@ -27,6 +27,15 @@ func testDotAlgorithm(state *State) {
 	}
 }
 
+func assertGoodDotTimestamp(t time.Time) {
+	if t.Second() != 0 {
+		panic("Non zero second in time")
+	}
+	if t.Nanosecond() != 0 {
+		panic("Non zero nanosecond in time")
+	}
+}
+
 func dotTest(state *State) {
 	now := time.Now()
 	startAll := now.Add(-48 * time.Hour)
@@ -38,6 +47,7 @@ func dotTest(state *State) {
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
+		assertGoodDotTimestamp(startT)
 		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
 			startT.UnixMilli(), endT.UnixMilli(), "v3")
 		if err != nil {
@@ -117,6 +127,7 @@ func dotBackfill(state *State) {
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
+		assertGoodDotTimestamp(startT)
 
 		row := state.db.QueryRow(`SELECT data FROM dot_data WHERE timestamp = ? AND dot_analyst = ?`, startT.Unix(), "v1")
 		var maybeData string
@@ -270,6 +281,7 @@ func dotProcessor(state *State) {
 				if endT.After(eventTimestamp) {
 					break
 				}
+				assertGoodDotTimestamp(startT)
 
 				// we're in a chunk [startT, endT], compute sentiments and set dot value on startT!
 				slog.Info("computing sentiments..")
