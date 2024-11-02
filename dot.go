@@ -175,16 +175,16 @@ func dotBackfill(state *State) {
 		}
 
 	}
-	slog.Info("dot processing complete")
+	slog.Info("dot backfill complete")
 }
 
-func lastDot(state *State) (time.Time, float64) {
+func lastDot(state *State) (time.Time, float64, bool) {
 	row := state.db.QueryRow(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 1`, "v1")
 	var maxTimestamp int64
 	var dotDataEncoded string
 	err := row.Scan(&maxTimestamp, &dotDataEncoded)
 	if errors.Is(err, sql.ErrNoRows) {
-		return time.Time{}, 0
+		return time.Time{}, 0, false
 	}
 	if err != nil {
 		panic(err)
@@ -201,7 +201,7 @@ func lastDot(state *State) (time.Time, float64) {
 		slog.Error("invalid dot data", slog.String("data", dotDataEncoded))
 		panic("invalid dot value")
 	}
-	return time.Unix(maxTimestamp, 0), dd
+	return time.Unix(maxTimestamp, 0), dd, true
 }
 
 func maxEventTimestamp(state *State) time.Time {
@@ -214,11 +214,24 @@ func maxEventTimestamp(state *State) time.Time {
 	return time.UnixMilli(maxTimestamp)
 }
 
+func minEventTimestamp(state *State) (time.Time, bool) {
+	row := state.db.QueryRow(`SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp ASC`, "v3")
+	var minTimestamp int64
+	err := row.Scan(&minTimestamp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false
+	}
+	if err != nil {
+		panic(err)
+	}
+	return time.UnixMilli(minTimestamp), true
+}
+
 func dotProcessor(state *State) {
 	// first we need to play catch up since the webapp might've restarted!!
 
 	now := time.Now()
-	startAll, _ := lastDot(state)
+	startAll, _, _ := lastDot(state)
 	// if it's been over 30 minutes, we need to backfill until the best timestamp, then backfill ourselves minute by minute
 	delta := now.Sub(startAll).Seconds()
 	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
@@ -233,15 +246,21 @@ func dotProcessor(state *State) {
 	ticker := time.Tick(dot.TimePeriod())
 
 	// every minute, we must check which chunks of posts we can process now
-
+	slog.Info("entering dot worker loop..")
 	for {
 		select {
 		case <-ticker:
 			// find the chunks by querying maxTimestamp after backfill
 			// and ticking forward TimePeriod steps until we find the maxTimestamp of sentiment_events
 
-			lastDotTimestamp, lastDotValue := lastDot(state)
+			lastDotTimestamp, lastDotValue, ok := lastDot(state)
 			eventTimestamp := maxEventTimestamp(state)
+			if !ok {
+				lastDotTimestamp, ok = minEventTimestamp(state)
+				if !ok {
+					lastDotTimestamp = time.Now()
+				}
+			}
 
 			lastDotState := DotV1{d: lastDotValue}
 
