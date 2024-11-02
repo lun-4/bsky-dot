@@ -48,7 +48,9 @@ func assertGoodDotDelta(lastT, incomingT time.Time) {
 
 func dotTest(state *State) {
 	now := time.Now()
-	startAll := now.Add(-48 * time.Hour)
+
+	startAll := now.Add(-24 * time.Hour)
+	startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
 	//startAll := now.Add(-1 * time.Hour)
 	endAll := now
 
