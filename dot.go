@@ -95,10 +95,12 @@ func dotTest(state *State) {
 func dotBackfill(state *State) {
 	now := time.Now()
 
-	row := state.db.QueryRow(`SELECT min(timestamp) FROM sentiment_events WHERE sentiment_analyst = ?`, "v3")
+	row := state.db.QueryRow(`SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp ASC`, "v3")
 	var minTimestamp int64
 	err := row.Scan(&minTimestamp)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
+		minTimestamp = time.Now().UnixMilli()
+	} else if err != nil {
 		panic(err)
 	}
 
