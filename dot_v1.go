@@ -41,15 +41,7 @@ func (d *DotV1) TimePeriod() time.Duration {
 }
 
 func (d *DotV1) Forward(sentiments []string) error {
-	counters := make(map[string]uint)
-	for _, sentiment := range sentiments {
-		counters[sentiment]++
-	}
-	proportions := make(map[string]float64)
-	for sentiment, count := range counters {
-		proportion := float64(count) / float64(len(sentiments))
-		proportions[sentiment] = proportion
-	}
+	proportions := sentimentToProportionMap(sentiments)
 
 	epsilon := 0.005 // a small value to increase/decrease the dot on each time step
 	for _, proportion := range proportions {

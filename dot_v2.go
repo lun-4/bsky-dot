@@ -103,7 +103,7 @@ func (d *DotV2) lastWinningSentiment() string {
 	return winningSentiment
 }
 
-func (d *DotV2) Forward(sentiments []string) error {
+func sentimentToProportionMap(sentiments []string) map[string]float64 {
 	counters := make(map[string]uint)
 	for _, sentiment := range sentiments {
 		counters[sentiment]++
@@ -113,6 +113,11 @@ func (d *DotV2) Forward(sentiments []string) error {
 		proportion := float64(count) / float64(len(sentiments))
 		proportions[sentiment] = proportion
 	}
+	return proportions
+}
+
+func (d *DotV2) Forward(sentiments []string) error {
+	proportions := sentimentToProportionMap(sentiments)
 
 	epsilonIncrease := 0.02
 	epsilonDecrease := 0.007
