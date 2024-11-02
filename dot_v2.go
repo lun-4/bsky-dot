@@ -8,13 +8,13 @@ import (
 )
 
 type DotV2Sentiment struct {
-	timestamp int64  `json:"t"`
-	value     string `json:"v"`
+	Timestamp int64  `json:"t"`
+	Value     string `json:"v"`
 }
 
 type DotV2 struct {
-	d              float64          `json:"d"`
-	lastSentiments []DotV2Sentiment `json:"s"`
+	D              float64          `json:"d"`
+	LastSentiments []DotV2Sentiment `json:"s"`
 }
 
 type DotVwState float64
@@ -25,33 +25,33 @@ func NewDotV2(previousState map[string]any) DotV2 {
 	for _, sentimentAny := range previousState["s"].([]any) {
 		sentimentMap := sentimentAny.(map[string]any)
 		sentimentsStrArray = append(sentimentsStrArray, DotV2Sentiment{
-			timestamp: sentimentMap["t"].(int64),
-			value:     sentimentMap["v"].(string),
+			Timestamp: sentimentMap["t"].(int64),
+			Value:     sentimentMap["v"].(string),
 		})
 	}
 	return DotV2{
-		d:              previousState["d"].(float64),
-		lastSentiments: sentimentsStrArray,
+		D:              previousState["d"].(float64),
+		LastSentiments: sentimentsStrArray,
 	}
 }
 
 func NewEmptyDotV2() DotV2 {
 	return DotV2{
-		d:              0.0,
-		lastSentiments: make([]DotV2Sentiment, 0),
+		D:              0.0,
+		LastSentiments: make([]DotV2Sentiment, 0),
 	}
 }
 
 func (d *DotV2) Serialize() map[string]any {
 	asSentimentMap := make([]map[string]any, 0)
-	for _, s := range d.lastSentiments {
+	for _, s := range d.LastSentiments {
 		asSentimentMap = append(asSentimentMap, map[string]any{
-			"t": s.timestamp,
-			"v": s.value,
+			"t": s.Timestamp,
+			"v": s.Value,
 		})
 	}
 	return map[string]any{
-		"d": d.d,
+		"d": d.D,
 		"s": lo.ToAnySlice(asSentimentMap),
 	}
 }
@@ -75,7 +75,7 @@ func appendToMaxLen(array []DotV2Sentiment, maxLen int, value DotV2Sentiment) []
 }
 
 func (d *DotV2) Value() float64 {
-	return d.d
+	return d.D
 }
 
 func (d *DotV2) lastWinningSentiment() string {
@@ -83,12 +83,12 @@ func (d *DotV2) lastWinningSentiment() string {
 	now := time.Now().Unix()
 
 	winCounter := make(map[string]int)
-	for _, lastSentiment := range d.lastSentiments {
-		delta := now - lastSentiment.timestamp
+	for _, lastSentiment := range d.LastSentiments {
+		delta := now - lastSentiment.Timestamp
 		if delta > 20*60 {
 			continue
 		}
-		winCounter[lastSentiment.value]++
+		winCounter[lastSentiment.Value]++
 	}
 
 	var winningSentiment string
@@ -132,14 +132,14 @@ func (d *DotV2) Forward(sentiments []string) error {
 	if winningSentiment == "positive" || winningSentiment == "negative" {
 		winningSentimentPreviousRun := d.lastWinningSentiment()
 		currentSentimentStillWins := winningSentimentPreviousRun == winningSentiment
-		d.lastSentiments = appendToMaxLen(d.lastSentiments, 60, DotV2Sentiment{timestamp: time.Now().Unix(), value: winningSentiment})
+		d.LastSentiments = appendToMaxLen(d.LastSentiments, 60, DotV2Sentiment{Timestamp: time.Now().Unix(), Value: winningSentiment})
 		if currentSentimentStillWins {
-			d.d = limitDot(d.d + epsilonIncrease)
+			d.D = limitDot(d.D + epsilonIncrease)
 		}
 		return nil
 	} else {
 		// no convergence, decrease by epsilon
-		d.d = limitDot(d.d - epsilonDecrease)
+		d.D = limitDot(d.D - epsilonDecrease)
 		return nil
 	}
 }
