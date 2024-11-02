@@ -102,7 +102,10 @@ func dotTest(state *State, dotState DotImpl) {
 		} else {
 			fmt.Println(t, "no sentiments")
 		}
-		dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.Serialize()})
+
+		dotSnapshot := Dot{UnixTimestamp: startT.Unix(), Value: dotState.Serialize()}
+		fmt.Println(dotSnapshot)
+		dotValues = append(dotValues, dotSnapshot)
 	}
 	fname, err := GenerateDotPlot(dotValues, dotState.Version())
 	if err != nil {
