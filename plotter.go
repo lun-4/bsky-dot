@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	"github.com/samber/lo"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/plotutil"
@@ -10,23 +11,33 @@ import (
 )
 
 // randomPoints returns some random x, y points.
-func toXY(data []Dot) plotter.XYs {
+func toXY(data []Dot, dotVersion string) plotter.XYs {
 	pts := make(plotter.XYs, len(data))
 	for index, dot := range data {
 		pts[index].X = float64(dot.UnixTimestamp)
-		pts[index].Y = dot.Value
+		var dotValue DotImpl
+		switch dotVersion {
+		case "v1":
+			dotValue = lo.ToPtr(NewDotV1(dot.Value))
+		case "v2":
+			dotValue = lo.ToPtr(NewDotV2(dot.Value))
+		default:
+			panic("unsupported version")
+
+		}
+		pts[index].Y = dotValue.Value()
 	}
 	return pts
 }
 
-func GenerateDotPlot(dotData []Dot) (string, error) {
+func GenerateDotPlot(dotData []Dot, dotVersion string) (string, error) {
 	p := plot.New()
 
 	p.Title.Text = "bsky dot"
 	p.X.Label.Text = "time"
 	p.Y.Label.Text = "bsky dot"
 
-	err := plotutil.AddLinePoints(p, "Dot", toXY(dotData))
+	err := plotutil.AddLinePoints(p, "Dot", toXY(dotData, dotVersion))
 	if err != nil {
 		return "", err
 	}

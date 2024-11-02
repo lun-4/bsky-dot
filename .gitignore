@@ -26,3 +26,4 @@ go.work.sum
 .envrc
 dataset/
 *.db*
+*.log

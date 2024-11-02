@@ -121,7 +121,7 @@ func (s *State) PrintState() {
 	slog.Info("  posts", slog.Any("count", s.postCounter.LockAndGet()))
 }
 
-func eventMetrics(state *State, eventChan chan Post) {
+func eventMetrics(state *State, eventChan chan Post, restartIncomingWorker chan bool) {
 	ticker := time.Tick(time.Second * 1)
 	for {
 		<-ticker
@@ -134,13 +134,16 @@ func eventMetrics(state *State, eventChan chan Post) {
 			if events > 999 {
 				slog.Warn("too many events! system is bottlenecked..", slog.Int("events", events))
 			}
+			if incoming == 0 {
+				restartIncomingWorker <- true
+			}
 			log.Printf("%d from upstream, %d posts, %d processed events a second (channel len %d)",
 				incoming, posts, processed, events)
 		}()
 	}
 }
 
-func blueskyUpstream(state *State, eventChannel chan Post) {
+func blueskyUpstream(state *State, eventChannel chan Post, restartChannel <-chan bool) {
 
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
@@ -775,13 +778,15 @@ func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
 	//sentimentChannel := make(chan string, 1000)
 
+	restartWorkerChannel := make(chan bool, 1)
+
 	if cfg.upstreamType == UpstreamType_BLUESKY {
-		go blueskyUpstream(state, eventChannel)
+		go blueskyUpstream(state, eventChannel, restartWorkerChannel)
 	} else {
 		panic("unsupported upstream type. this is a bug")
 	}
 
-	go eventMetrics(state, eventChannel)
+	go eventMetrics(state, eventChannel, restartWorkerChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
 	for range state.cfg.numWorkers {
 		go eventProcessor(state, eventChannel) //, sentimentChannel)
@@ -826,11 +831,11 @@ func GetCurrentDot(state *State) (float64, error) {
 
 type Dot struct {
 	UnixTimestamp int64
-	Value         float64
+	Value         map[string]any
 }
 
-func GetLastCoupleDots(state *State) ([]Dot, error) {
-	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data ORDER BY timestamp DESC LIMIT 1500`)
+func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
+	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 1500`, version)
 	if err != nil {
 		return nil, err
 	}
@@ -848,7 +853,7 @@ func GetLastCoupleDots(state *State) ([]Dot, error) {
 		if err != nil {
 			return nil, err
 		}
-		dot.Value = dotData["d"].(float64)
+		dot.Value = dotData
 		dots = append(dots, dot)
 	}
 	return dots, nil
@@ -861,12 +866,12 @@ func hello(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	dots, err := GetLastCoupleDots(cc.State())
+	dots, err := GetLastCoupleDots(cc.State(), "v1")
 	if err != nil {
 		return err
 	}
 
-	filename, err := GenerateDotPlot(dots)
+	filename, err := GenerateDotPlot(dots, "v1")
 	if err != nil {
 		return err
 	}

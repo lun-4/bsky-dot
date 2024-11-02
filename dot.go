@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 func testDotAlgorithm(state *State) {
@@ -19,7 +21,9 @@ func testDotAlgorithm(state *State) {
 
 	switch dotAction {
 	case "test":
-		dotTest(state)
+		dotTest(state, lo.ToPtr(NewEmptyDotV1()))
+	case "test-v2":
+		dotTest(state, lo.ToPtr(NewEmptyDotV2()))
 	case "backfill":
 		dotBackfill(state)
 	case "validate-timestamps":
@@ -46,7 +50,15 @@ func assertGoodDotDelta(lastT, incomingT time.Time) {
 	}
 }
 
-func dotTest(state *State) {
+type DotImpl interface {
+	Serialize() map[string]any
+	TimePeriod() time.Duration
+	Forward(sentiments []string) error
+	Value() float64
+	Version() string
+}
+
+func dotTest(state *State, dotState DotImpl) {
 	now := time.Now()
 
 	startAll := now.Add(-24 * time.Hour)
@@ -54,7 +66,6 @@ func dotTest(state *State) {
 	//startAll := now.Add(-1 * time.Hour)
 	endAll := now
 
-	dotState := NewDotV1()
 	dotValues := make([]Dot, 0)
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
@@ -87,15 +98,13 @@ func dotTest(state *State) {
 
 		if len(sentiments) > 0 {
 			dotState.Forward(sentiments)
-			dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.d})
-			fmt.Println(t, dotState.d)
+			fmt.Println(t, dotState.Value())
 		} else {
-			dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.d})
 			fmt.Println(t, "no sentiments")
 		}
+		dotValues = append(dotValues, Dot{UnixTimestamp: startT.Unix(), Value: dotState.Serialize()})
 	}
-	fmt.Println(dotState.d)
-	fname, err := GenerateDotPlot(dotValues)
+	fname, err := GenerateDotPlot(dotValues, dotState.Version())
 	if err != nil {
 		panic(err)
 	}
@@ -133,7 +142,7 @@ func dotBackfill(state *State) {
 
 	// keep walking TimePeriod() steps until we get to a timestamp that is within the last 30 minutes
 	// (the dot processor is the one that will do final backfilling of the last N amounts of time. this process is just to ease it up)
-	dotState := NewDotV1()
+	dotState := NewEmptyDotV1()
 	endAll := now.Add(-30 * time.Minute)
 
 	slog.Info("backfilling", slog.String("now", now.String()), slog.String("startAll", startAll.String()), slog.String("endAll", endAll.String()))
@@ -267,8 +276,8 @@ func dotProcessor(state *State) {
 		slog.Info("not backfilling")
 	}
 
-	dot := NewDotV1()
-	ticker := time.Tick(dot.TimePeriod())
+	specDot := NewEmptyDotV1()
+	ticker := time.Tick(specDot.TimePeriod())
 
 	// every minute, we must check which chunks of posts we can process now
 	slog.Info("entering dot worker loop..")
@@ -289,10 +298,10 @@ func dotProcessor(state *State) {
 
 			lastProcessedTimestamp := lastDotTimestamp
 
-			for t := lastDotTimestamp.Add(dot.TimePeriod()); t.Before(eventTimestamp); t = t.Add(dot.TimePeriod()) {
+			for t := lastDotTimestamp.Add(specDot.TimePeriod()); t.Before(eventTimestamp); t = t.Add(specDot.TimePeriod()) {
 				startT := t
 				assertGoodDotDelta(lastProcessedTimestamp, startT)
-				endT := t.Add(dot.TimePeriod())
+				endT := t.Add(specDot.TimePeriod())
 				if endT.After(eventTimestamp) {
 					break
 				}

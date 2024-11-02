@@ -10,8 +10,30 @@ type DotV1 struct {
 
 type DotV1State float64
 
-func NewDotV1() DotV1 {
-	return DotV1{}
+func NewDotV1(previousState map[string]any) DotV1 {
+	return DotV1{
+		d: previousState["d"].(float64),
+	}
+}
+
+func NewEmptyDotV1() DotV1 {
+	return DotV1{
+		d: 0.0,
+	}
+}
+
+func (d *DotV1) Value() float64 {
+	return d.d
+}
+
+func (d *DotV1) Version() string {
+	return "v1"
+}
+
+func (d *DotV1) Serialize() map[string]any {
+	return map[string]any{
+		"d": d.d,
+	}
 }
 
 func (d *DotV1) TimePeriod() time.Duration {
