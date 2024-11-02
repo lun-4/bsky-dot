@@ -14,6 +14,7 @@ import (
 	"log"
 	"log/slog"
 	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -454,7 +455,14 @@ type TweetEvalRow struct {
 }
 
 func validateEmbeddingModel(cfg Config) {
-	req, err := http.NewRequest("GET", cfg.embeddingUrl+"/v1/models", nil)
+	var url string
+	if strings.Contains(cfg.embeddingUrl, ",") {
+		urls := strings.Split(cfg.embeddingUrl, ",")
+		url = urls[rand.Intn(len(urls))]
+	} else {
+		url = cfg.embeddingUrl
+	}
+	req, err := http.NewRequest("GET", url+"/v1/models", nil)
 	if err != nil {
 		panic(err)
 	}
@@ -495,7 +503,15 @@ func getUpstreamEmbedding(cfg Config, client http.Client, text string) []float64
 	if err != nil {
 		panic(err)
 	}
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/embedding", cfg.embeddingUrl), bytes.NewReader(encodedBody))
+
+	var url string
+	if strings.Contains(cfg.embeddingUrl, ",") {
+		urls := strings.Split(cfg.embeddingUrl, ",")
+		url = urls[rand.Intn(len(urls))]
+	} else {
+		url = cfg.embeddingUrl
+	}
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/embedding", url), bytes.NewReader(encodedBody))
 	if err != nil {
 		panic(err)
 	}
