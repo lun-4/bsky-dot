@@ -44,8 +44,11 @@ func (d *DotV1) Serialize() map[string]any {
 func (d *DotV1) TimePeriod() time.Duration {
 	return 1 * time.Minute
 }
+func (d *DotV1) Debug() {
+}
 
-func (d *DotV1) Forward(sentiments []string) error {
+func (d *DotV1) Forward(timestamp time.Time, sentiments []string) error {
+	_ = timestamp
 	proportions := sentimentToProportionMap(sentiments)
 
 	epsilon := 0.005 // a small value to increase/decrease the dot on each time step

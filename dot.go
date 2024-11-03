@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -57,9 +58,10 @@ func assertGoodDotDelta(lastT, incomingT time.Time) {
 type DotImpl interface {
 	Serialize() map[string]any
 	TimePeriod() time.Duration
-	Forward(sentiments []string) error
+	Forward(timestamp time.Time, sentiments []string) error
 	Value() float64
 	Version() string
+	Debug()
 }
 
 func dotTest(state *State, dotState DotImpl) {
@@ -101,14 +103,14 @@ func dotTest(state *State, dotState DotImpl) {
 		}
 
 		if len(sentiments) > 0 {
-			dotState.Forward(sentiments)
-			fmt.Println(t, dotState.Value())
+			dotState.Forward(endT, sentiments)
+			dotState.Debug()
 		} else {
 			fmt.Println(t, "no sentiments")
 		}
 
 		dotSnapshot := Dot{UnixTimestamp: startT.Unix(), Value: dotState.Serialize()}
-		fmt.Println(dotSnapshot)
+		log.Println(startT.Unix(), dotState.Value())
 		dotValues = append(dotValues, dotSnapshot)
 	}
 	fname, err := GenerateDotPlot(dotValues, dotState.Version())
@@ -205,7 +207,7 @@ func dotBackfill(state *State, version string) {
 		}
 
 		if len(sentiments) > 0 {
-			dotState.Forward(sentiments)
+			dotState.Forward(endT, sentiments)
 		}
 
 		wrapped := dotState.Serialize()
@@ -392,7 +394,7 @@ func dotProcessor(state *State) {
 
 				currentDotValue := lastDotState.d
 				if len(sentiments) > 0 {
-					lastDotState.Forward(sentiments)
+					lastDotState.Forward(endT, sentiments)
 					currentDotValue = lastDotState.d
 				} else {
 					slog.Error("no sentiments found!!!!! problem!!! (workers died or not running fast enough)")
@@ -528,7 +530,7 @@ func dotProcessor_V2(state *State) {
 				}
 
 				if len(sentiments) > 0 {
-					lastDotState.Forward(sentiments)
+					lastDotState.Forward(endT, sentiments)
 				} else {
 					slog.Error("no sentiments found!!!!! problem!!! (workers died, or not running fast enough to keep up)")
 					state.PrintState()

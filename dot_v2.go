@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/samber/lo"
@@ -77,13 +78,11 @@ func (d *DotV2) Value() float64 {
 	return d.D
 }
 
-func (d *DotV2) lastWinningSentiment() string {
-
-	now := time.Now().Unix()
+func (d *DotV2) lastWinningSentiment(timestamp time.Time) string {
 
 	winCounter := make(map[string]int)
 	for _, lastSentiment := range d.LastSentiments {
-		delta := now - lastSentiment.Timestamp
+		delta := timestamp.Unix() - lastSentiment.Timestamp
 		if delta > 20*60 {
 			continue
 		}
@@ -115,22 +114,30 @@ func sentimentToProportionMap(sentiments []string) map[string]float64 {
 	return proportions
 }
 
-func (d *DotV2) Forward(sentiments []string) error {
+func (d *DotV2) Debug() {
+	for idx, sentiment := range d.LastSentiments {
+		fmt.Printf("%v %v %v\n", idx, sentiment.Timestamp, sentiment.Value)
+	}
+	fmt.Printf("\n")
+}
+
+func (d *DotV2) Forward(timestamp time.Time, sentiments []string) error {
 	proportions := sentimentToProportionMap(sentiments)
 
 	epsilonIncrease := 0.02
 	epsilonDecrease := 0.007
 	var winningSentiment string
 	for sentiment, proportion := range proportions {
-		if proportion > 0.35 {
+		if proportion > 0.33 {
 			winningSentiment = sentiment
 		}
 	}
 
 	if winningSentiment == "positive" || winningSentiment == "negative" {
-		winningSentimentPreviousRun := d.lastWinningSentiment()
+		winningSentimentPreviousRun := d.lastWinningSentiment(timestamp)
 		currentSentimentStillWins := winningSentimentPreviousRun == winningSentiment
-		d.LastSentiments = appendToMaxLen(d.LastSentiments, 60, DotV2Sentiment{Timestamp: time.Now().Unix(), Value: winningSentiment})
+		//fmt.Println(winningSentimentPreviousRun, winningSentiment)
+		d.LastSentiments = appendToMaxLen(d.LastSentiments, dotV2SentimentSize, DotV2Sentiment{Timestamp: timestamp.Unix(), Value: winningSentiment})
 		if currentSentimentStillWins {
 			d.D = limitDot(d.D + epsilonIncrease)
 		}
