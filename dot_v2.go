@@ -19,6 +19,8 @@ type DotV2 struct {
 
 type DotVwState float64
 
+const dotV2SentimentSize = 40
+
 func NewDotV2(previousState map[string]any) DotV2 {
 	sentimentsStrArray := make([]DotV2Sentiment, 0)
 
@@ -28,6 +30,9 @@ func NewDotV2(previousState map[string]any) DotV2 {
 			Timestamp: int64(sentimentMap["t"].(float64)),
 			Value:     sentimentMap["v"].(string),
 		})
+	}
+	if len(sentimentsStrArray) > dotV2SentimentSize {
+		sentimentsStrArray = sentimentsStrArray[:dotV2SentimentSize]
 	}
 	return DotV2{
 		D:              previousState["d"].(float64),
