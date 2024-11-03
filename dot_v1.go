@@ -11,6 +11,11 @@ type DotV1 struct {
 type DotV1State float64
 
 func NewDotV1(previousState map[string]any) DotV1 {
+	for k, _ := range previousState {
+		if k != "d" {
+			panic("DotV1: unexpected state key '" + k + "'")
+		}
+	}
 	return DotV1{
 		d: previousState["d"].(float64),
 	}

@@ -852,6 +852,10 @@ type Dot struct {
 	UnixTimestamp int64
 	Value         map[string]any
 }
+type ParsedDot struct {
+	UnixTimestamp int64
+	Dot           DotImpl
+}
 
 func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 3000`, version)
