@@ -143,8 +143,7 @@ func eventMetrics(state *State, eventChan chan Post, restartIncomingWorker chan 
 	}
 }
 
-func blueskyUpstream(state *State, eventChannel chan Post, restartChannel <-chan bool) {
-
+func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan error) {
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
 	if err != nil {
@@ -245,9 +244,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, restartChannel <-chan
 	//ctx, cancel := context.WithTimeout(state.ctx, time.Duration(time.Second*10))
 	//defer cancel()
 	err = events.HandleRepoStream(state.ctx, con, sched)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	errorChannel <- err
 }
 
 type Post struct {
@@ -776,17 +773,28 @@ func (c *CustomContext) State() *State {
 	return c.state
 }
 
+func upstreamWorker(state *State, eventChannel chan Post) {
+	errorChannel := make(chan error, 1)
+	for {
+		switch state.cfg.upstreamType {
+		case UpstreamType_BLUESKY:
+			go blueskyUpstream(state, eventChannel, errorChannel)
+		default:
+			panic("unsupported upstream type. this is a bug")
+		}
+
+		err := <-errorChannel
+		slog.Error("upstream worker failed, restarting", slog.String("err", err.Error()))
+	}
+}
+
 func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
 	//sentimentChannel := make(chan string, 1000)
 
 	restartWorkerChannel := make(chan bool, 1)
 
-	if cfg.upstreamType == UpstreamType_BLUESKY {
-		go blueskyUpstream(state, eventChannel, restartWorkerChannel)
-	} else {
-		panic("unsupported upstream type. this is a bug")
-	}
+	go upstreamWorker(state, eventChannel)
 
 	go eventMetrics(state, eventChannel, restartWorkerChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
