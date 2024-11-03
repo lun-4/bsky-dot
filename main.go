@@ -810,7 +810,7 @@ func run(state *State, cfg Config) {
 			go eventProcessor(state, eventChannel, url)
 		}
 	}
-	go dotProcessor(state)
+	go dotProcessor_V2(state)
 
 	e := echo.New()
 
@@ -854,7 +854,7 @@ type Dot struct {
 }
 
 func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
-	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 1500`, version)
+	rows, err := state.db.Query(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 3000`, version)
 	if err != nil {
 		return nil, err
 	}
@@ -878,6 +878,8 @@ func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 	return dots, nil
 }
 
+const CURRENT_DOT_VERSION = "v2"
+
 // Handler
 func hello(c echo.Context) error {
 	cc := c.(*CustomContext)
@@ -885,12 +887,12 @@ func hello(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	dots, err := GetLastCoupleDots(cc.State(), "v1")
+	dots, err := GetLastCoupleDots(cc.State(), CURRENT_DOT_VERSION)
 	if err != nil {
 		return err
 	}
 
-	filename, err := GenerateDotPlot(dots, "v1")
+	filename, err := GenerateDotPlot(dots, CURRENT_DOT_VERSION)
 	if err != nil {
 		return err
 	}

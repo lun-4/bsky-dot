@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/samber/lo"
@@ -25,7 +24,7 @@ func NewDotV2(previousState map[string]any) DotV2 {
 	for _, sentimentAny := range previousState["s"].([]any) {
 		sentimentMap := sentimentAny.(map[string]any)
 		sentimentsStrArray = append(sentimentsStrArray, DotV2Sentiment{
-			Timestamp: sentimentMap["t"].(int64),
+			Timestamp: int64(sentimentMap["t"].(float64)),
 			Value:     sentimentMap["v"].(string),
 		})
 	}
@@ -128,7 +127,6 @@ func (d *DotV2) Forward(sentiments []string) error {
 		}
 	}
 
-	fmt.Println("wins", winningSentiment)
 	if winningSentiment == "positive" || winningSentiment == "negative" {
 		winningSentimentPreviousRun := d.lastWinningSentiment()
 		currentSentimentStillWins := winningSentimentPreviousRun == winningSentiment

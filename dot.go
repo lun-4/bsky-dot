@@ -25,7 +25,11 @@ func testDotAlgorithm(state *State) {
 	case "test-v2":
 		dotTest(state, lo.ToPtr(NewEmptyDotV2()))
 	case "backfill":
-		dotBackfill(state)
+		if len(os.Args) < 4 {
+			panic("backfill action requires a version")
+		}
+		version := os.Args[3]
+		dotBackfill(state, version)
 	case "validate-timestamps":
 		dotValidateTimestamps(state)
 	default:
@@ -127,7 +131,7 @@ func dotTest(state *State, dotState DotImpl) {
 
 }
 
-func dotBackfill(state *State) {
+func dotBackfill(state *State, version string) {
 	now := time.Now()
 
 	row := state.db.QueryRow(`SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp ASC`, "v3")
@@ -145,7 +149,17 @@ func dotBackfill(state *State) {
 
 	// keep walking TimePeriod() steps until we get to a timestamp that is within the last 30 minutes
 	// (the dot processor is the one that will do final backfilling of the last N amounts of time. this process is just to ease it up)
-	dotState := NewEmptyDotV1()
+	var dotState DotImpl
+	switch version {
+	case "v1":
+		dotState = lo.ToPtr(NewEmptyDotV1())
+	case "v2":
+		dotState = lo.ToPtr(NewEmptyDotV2())
+	default:
+		slog.Error("unsupported version", slog.String("version", version))
+		panic("unsupported version")
+	}
+
 	endAll := now.Add(-30 * time.Minute)
 
 	slog.Info("backfilling", slog.String("now", now.String()), slog.String("startAll", startAll.String()), slog.String("endAll", endAll.String()))
@@ -155,7 +169,7 @@ func dotBackfill(state *State) {
 		assertGoodDotTimestamp(startT)
 		assertGoodDotTimestamp(endT)
 
-		row := state.db.QueryRow(`SELECT data FROM dot_data WHERE timestamp = ? AND dot_analyst = ?`, startT.Unix(), "v1")
+		row := state.db.QueryRow(`SELECT data FROM dot_data WHERE timestamp = ? AND dot_analyst = ?`, startT.Unix(), dotState.Version())
 		var maybeData string
 		err := row.Scan(&maybeData)
 		if err == nil {
@@ -190,29 +204,28 @@ func dotBackfill(state *State) {
 			sentiments = append(sentiments, sentimentData)
 		}
 
-		currentDotValue := dotState.d
 		if len(sentiments) > 0 {
 			dotState.Forward(sentiments)
-			currentDotValue = dotState.d
 		}
 
-		wrapped := map[string]any{
-			"d": currentDotValue,
-		}
-
+		wrapped := dotState.Serialize()
 		encoded, err := json.Marshal(wrapped)
 		if err != nil {
 			panic(err)
 		}
 
-		slog.Info("backfilling...", slog.Int64("timestamp", startT.Unix()), slog.Float64("value", currentDotValue))
-		_, err = state.db.Exec(`INSERT INTO dot_data (timestamp, dot_analyst, data) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, startT.Unix(), "v1", string(encoded))
+		slog.Info("backfilling...", slog.Int64("timestamp", startT.Unix()), slog.Float64("value", dotState.Value()))
+		_, err = state.db.Exec(`INSERT INTO dot_data (timestamp, dot_analyst, data) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+			startT.Unix(), dotState.Version(), string(encoded))
 		if err != nil {
 			panic(err)
 		}
-
 	}
-	slog.Info("dot backfill complete")
+	_, ok := lastDotV2(state)
+	if !ok {
+		panic("failed to create dot data")
+	}
+	slog.Info("dot backfill complete", slog.String("version", version))
 }
 
 func lastDot(state *State) (time.Time, float64, bool) {
@@ -239,6 +252,30 @@ func lastDot(state *State) (time.Time, float64, bool) {
 		panic("invalid dot value")
 	}
 	return time.Unix(maxTimestamp, 0), dd, true
+}
+
+func lastDotV2(state *State) (Dot, bool) {
+	row := state.db.QueryRow(`SELECT timestamp, data FROM dot_data WHERE dot_analyst = ? ORDER BY timestamp DESC LIMIT 1`, "v2")
+	var maxTimestamp int64
+	var dotDataEncoded string
+	err := row.Scan(&maxTimestamp, &dotDataEncoded)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Dot{}, false
+	}
+	if err != nil {
+		panic(err)
+	}
+
+	var dotData map[string]any
+	err = json.Unmarshal([]byte(dotDataEncoded), &dotData)
+	if err != nil {
+		panic(err)
+	}
+
+	return Dot{
+		UnixTimestamp: maxTimestamp,
+		Value:         dotData,
+	}, false
 }
 
 func maxEventTimestamp(state *State) time.Time {
@@ -274,7 +311,7 @@ func dotProcessor(state *State) {
 	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
 	if delta > time.Duration(30*time.Minute).Seconds() {
 		slog.Info("backfilling!")
-		dotBackfill(state)
+		dotBackfill(state, "v1")
 	} else {
 		slog.Info("not backfilling")
 	}
@@ -395,4 +432,101 @@ func dotValidateTimestamps(state *State) {
 	}
 
 	slog.Info("timestamp validation complete")
+}
+
+func dotProcessor_V2(state *State) {
+	// first we need to play catch up since the webapp might've restarted!!
+
+	now := time.Now()
+	startAll, _, _ := lastDot(state)
+	// if it's been over 30 minutes, we need to backfill until the best timestamp, then backfill ourselves minute by minute
+	delta := now.Sub(startAll).Seconds()
+	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
+	if delta > time.Duration(30*time.Minute).Seconds() {
+		slog.Info("backfilling!")
+		dotBackfill(state, "v2")
+	} else {
+		slog.Info("not backfilling")
+	}
+
+	specDot := NewEmptyDotV2()
+	ticker := time.Tick(specDot.TimePeriod())
+
+	// every minute, we must check which chunks of posts we can process now
+	slog.Info("entering dot worker loop..")
+	for {
+		select {
+		case <-ticker:
+			// find the chunks by querying maxTimestamp after backfill
+			// and ticking forward TimePeriod steps until we find the maxTimestamp of sentiment_events
+
+			lastDotRawState, ok := lastDotV2(state)
+			eventTimestamp := maxEventTimestamp(state)
+			if !ok {
+				panic("no dot data, please run the backfill task first")
+			}
+			lastProcessedTimestamp := time.Unix(lastDotRawState.UnixTimestamp, 0)
+			assertGoodDotTimestamp(lastProcessedTimestamp)
+
+			lastDotState := NewDotV2(lastDotRawState.Value)
+
+			for t := lastProcessedTimestamp.Add(specDot.TimePeriod()); t.Before(eventTimestamp); t = t.Add(specDot.TimePeriod()) {
+				startT := t
+				assertGoodDotDelta(lastProcessedTimestamp, startT)
+				endT := t.Add(specDot.TimePeriod())
+				if endT.After(eventTimestamp) {
+					break
+				}
+				assertGoodDotTimestamp(startT)
+				assertGoodDotTimestamp(endT)
+
+				// we're in a chunk [startT, endT], compute sentiments and set dot value on startT!
+				slog.Info("computing sentiments..")
+				rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp >= ? and timestamp <= ? and sentiment_analyst = ?`,
+					startT.UnixMilli(), endT.UnixMilli(), state.cfg.embeddingVersion)
+				if err != nil {
+					panic(err)
+				}
+				sentiments := make([]string, 0)
+				for rows.Next() {
+					var postHash string
+					err := rows.Scan(&postHash)
+					if err != nil {
+						panic(err)
+					}
+
+					// for each event, get its sentiment (this should be a join maybe)
+					row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, state.cfg.embeddingVersion)
+					var sentimentData string
+					err = row.Scan(&sentimentData)
+					if err != nil {
+						slog.Error("no sentiment data found in sentiment_data table", slog.String("postHash", postHash))
+						continue
+					}
+					sentiments = append(sentiments, sentimentData)
+				}
+
+				if len(sentiments) > 0 {
+					lastDotState.Forward(sentiments)
+				} else {
+					slog.Error("no sentiments found!!!!! problem!!! (workers died, or not running fast enough to keep up)")
+					state.PrintState()
+				}
+
+				wrapped := lastDotState.Serialize()
+				encoded, err := json.Marshal(wrapped)
+				if err != nil {
+					panic(err)
+				}
+
+				slog.Info("dot!", slog.Int64("timestamp", startT.Unix()), slog.Float64("value", lastDotState.Value()))
+				_, err = state.db.Exec(`INSERT INTO dot_data (timestamp, dot_analyst, data) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+					startT.Unix(), lastDotState.Version(), string(encoded))
+				if err != nil {
+					panic(err)
+				}
+				lastProcessedTimestamp = startT
+			}
+		}
+	}
 }
