@@ -454,9 +454,9 @@ func dotProcessor_V2(state *State) {
 	// first we need to play catch up since the webapp might've restarted!!
 
 	now := time.Now()
-	startAll, _, _ := lastDot(state)
+	lastDotStart, _ := lastDotV2(state, "v2")
 	// if it's been over 30 minutes, we need to backfill until the best timestamp, then backfill ourselves minute by minute
-	delta := now.Sub(startAll).Seconds()
+	delta := now.Sub(time.Unix(lastDotStart.UnixTimestamp, 0)).Seconds()
 	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
 	if delta > time.Duration(30*time.Minute).Seconds() {
 		slog.Info("backfilling!")
