@@ -45,7 +45,7 @@ func (d *DotV2) Serialize() map[string]any {
 	asSentimentMap := make([]map[string]any, 0)
 	for _, s := range d.LastSentiments {
 		asSentimentMap = append(asSentimentMap, map[string]any{
-			"t": s.Timestamp,
+			"t": float64(s.Timestamp),
 			"v": s.Value,
 		})
 	}
