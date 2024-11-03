@@ -490,7 +490,9 @@ func dotProcessor_V2(state *State) {
 
 			lastDotState := lastDotRawState.Dot
 
-			for t := lastProcessedTimestamp.Add(specDot.TimePeriod()); t.Before(eventTimestamp); t = t.Add(specDot.TimePeriod()) {
+			startAll := lastProcessedTimestamp.Add(specDot.TimePeriod())
+			slog.Info("processing dots...", slog.Time("startAll", startAll))
+			for t := startAll; t.Add(specDot.TimePeriod()).Before(eventTimestamp); t = t.Add(specDot.TimePeriod()) {
 				startT := t
 				assertGoodDotDelta(lastProcessedTimestamp, startT)
 				endT := t.Add(specDot.TimePeriod())
@@ -501,7 +503,6 @@ func dotProcessor_V2(state *State) {
 				assertGoodDotTimestamp(endT)
 
 				// we're in a chunk [startT, endT], compute sentiments and set dot value on startT!
-				slog.Info("computing sentiments..")
 				rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp >= ? and timestamp <= ? and sentiment_analyst = ?`,
 					startT.UnixMilli(), endT.UnixMilli(), state.cfg.embeddingVersion)
 				if err != nil {
