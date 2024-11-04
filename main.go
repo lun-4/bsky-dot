@@ -810,7 +810,7 @@ func run(state *State, cfg Config) {
 			go eventProcessor(state, eventChannel, url)
 		}
 	}
-	go dotProcessor_V2(state, "v3")
+	go dotProcessor_V2(state, CURRENT_DOT_VERSION)
 
 	e := echo.New()
 
@@ -882,7 +882,7 @@ func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 	return dots, nil
 }
 
-const CURRENT_DOT_VERSION = "v2"
+const CURRENT_DOT_VERSION = "v3"
 
 // Handler
 func hello(c echo.Context) error {
