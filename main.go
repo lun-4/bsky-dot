@@ -27,6 +27,7 @@ import (
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/events/schedulers/sequential"
 	"github.com/bluesky-social/indigo/repo"
+	"github.com/enescakir/emoji"
 	"github.com/gorilla/websocket"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
@@ -884,6 +885,21 @@ func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 
 const CURRENT_DOT_VERSION = "v3"
 
+func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
+	if value < 0.1 {
+		return emoji.BlueCircle, "the network isn't feeling quite a lot..."
+	} else if value < 0.4 {
+		return emoji.YellowCircle, "the network is bubbling an emotion..."
+	} else if value < 0.7 {
+		return emoji.GreenCircle, "the network's humor meter is average."
+	} else if value < 0.9 {
+		return emoji.YellowCircle, "the network is feeling something."
+	} else if value < 1.0 {
+		return emoji.RedCircle, "the network is Feeling It. A lot. it is feeling Something, a lot."
+	}
+	panic("invalid value")
+}
+
 // Handler
 func hello(c echo.Context) error {
 	cc := c.(*CustomContext)
@@ -891,6 +907,7 @@ func hello(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	dotEmoji, dotEmojiText := dotEmojiFromValue(dotValue)
 	dots, err := GetLastCoupleDots(cc.State(), CURRENT_DOT_VERSION)
 	if err != nil {
 		return err
@@ -910,17 +927,32 @@ func hello(c echo.Context) error {
 	encodedImg := base64.StdEncoding.EncodeToString(data)
 	c.Response().Header().Set("content-type", "text/html")
 	return c.HTML(http.StatusOK, fmt.Sprintf(`
-		<h1>the bluesky dot</h1>
-		<h2>a funny experiment on the firehose and processing data at scale<h2>
-		<h3>by <a href="https://bsky.app/profile/l4.pm">@l4.pm</a></h3>
-		<h4>i am not good at web design and i had a self-imposed deadline to finish this. it is what it is.</h4>
-		<h5>thank you <a href="https://bsky.app/profile/natalie.ee">@natalie.ee</a> for the original idea and hardware</h5>
-		<h5>thank you <a href="https://bsky.app/profile/philpax.me">@philpax.me</a> for helping me with architecture design</h5>
-		<p>the current value is %.5f</p>
-		<p>the closer to 0, the more the network is random, the closer to 1, the more the network is focused on feeling good or feeling bad</p>
-		<p>last couple hours</p>
-		<img src="data:image/png;base64,%s" alt="dot historical" />
-	`, dotValue, encodedImg))
+		<head>
+			<meta charset="utf-8">
+			<style type="text/css">
+			p, h2, h3, h4{
+				line-height: 10px;
+			}
+			h5 {
+				line-height: 2px;
+			}
+			</style>
+		</head>
+		<body>
+			<h1>the bluesky dot</h1>
+			<h2>a funny experiment on the firehose and processing data at scale, 
+			<p>measuring the amount of Emotion in the bluesky network</p><h2>
+			<h3>by <a href="https://bsky.app/profile/l4.pm">@l4.pm</a></h3>
+			<h5>and <a href="https://bsky.app/profile/natalie.ee">@natalie.ee</a> for the original idea and hardware</h5>
+			<h5>and <a href="https://bsky.app/profile/philpax.me">@philpax.me</a> for helping me with architecture design</h5>
+			<h4>i am not good at web design and i had a self-imposed deadline to finish this. it is what it is.</h4>
+			<p>the current value is <b>%.5f %v %s</b></p>
+			<p>value's range is 0 to 1. the higher, the more Emotion the network is feeling.</p>
+			<p>last couple hours:</p>
+			<img src="data:image/png;base64,%s" alt="dot historical" />
+			<p>if you want to provide better algorithms or just look at code, here's the <a href="https://github.com/lun-4/bsky-dot">source code</a></p>
+		</body>
+	`, dotValue, dotEmoji, dotEmojiText, encodedImg))
 }
 
 // CosineSimilarity calculates the cosine similarity between two vectors `a` and `b`

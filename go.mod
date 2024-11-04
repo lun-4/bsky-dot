@@ -28,6 +28,7 @@ require (
 	github.com/chewxy/hm v1.0.0 // indirect
 	github.com/chewxy/math32 v1.0.8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/enescakir/emoji v1.0.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-fonts/liberation v0.3.3 // indirect
 	github.com/go-latex/latex v0.0.0-20240709081214-31cef3c7570e // indirect
