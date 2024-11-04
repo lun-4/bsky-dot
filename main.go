@@ -989,9 +989,16 @@ func hello(c echo.Context) error {
 			const data = %s;
 
 			const plot = Plot.plot({
+				marginTop: 20,
+				marginRight: 20,
+				marginBottom: 30,
+				marginLeft: 40,
+				width: 1000,
+				grid: true,
 				marks: [
 					Plot.ruleY([0,1]),
-					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"})
+					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"}),
+					Plot.frame()
 				]
 			});
 			const div = document.querySelector("#myplot");
