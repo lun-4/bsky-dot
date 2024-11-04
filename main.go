@@ -810,7 +810,7 @@ func run(state *State, cfg Config) {
 			go eventProcessor(state, eventChannel, url)
 		}
 	}
-	go dotProcessor_V2(state)
+	go dotProcessor_V2(state, "v3")
 
 	e := echo.New()
 

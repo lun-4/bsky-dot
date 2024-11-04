@@ -366,6 +366,8 @@ func lastDotV2(state *State, version string) (ParsedDot, bool) {
 		dot = lo.ToPtr(NewDotV1(dotData))
 	case "v2":
 		dot = lo.ToPtr(NewDotV2(dotData))
+	case "v3":
+		dot = lo.ToPtr(NewDotV3(dotData))
 	default:
 		panic("invalid version")
 
@@ -532,17 +534,17 @@ func dotValidateTimestamps(state *State) {
 	slog.Info("timestamp validation complete")
 }
 
-func dotProcessor_V2(state *State) {
+func dotProcessor_V2(state *State, version string) {
 	// first we need to play catch up since the webapp might've restarted!!
 
 	now := time.Now()
-	lastDotStart, _ := lastDotV2(state, "v2")
+	lastDotStart, _ := lastDotV2(state, version)
 	// if it's been over 30 minutes, we need to backfill until the best timestamp, then backfill ourselves minute by minute
 	delta := now.Sub(time.Unix(lastDotStart.UnixTimestamp, 0)).Seconds()
 	slog.Info("do we need to backfill?", slog.Float64("delta", delta), slog.Float64("target", time.Duration(30*time.Minute).Seconds()))
 	if delta > time.Duration(30*time.Minute).Seconds() {
 		slog.Info("backfilling!")
-		dotBackfill(state, "v2")
+		dotBackfill(state, version)
 	} else {
 		slog.Info("not backfilling")
 	}
@@ -559,8 +561,8 @@ func dotProcessor_V2(state *State) {
 			// find the chunks by querying maxTimestamp after backfill
 			// and ticking forward TimePeriod steps until we find the maxTimestamp of sentiment_events
 
-			lastDotRawState, ok := lastDotV2(state, "v2")
-			if lastDotRawState.Dot.Version() != "v2" {
+			lastDotRawState, ok := lastDotV2(state, version)
+			if lastDotRawState.Dot.Version() != version {
 				panic("invalid dot")
 			}
 			eventTimestamp := maxEventTimestamp(state)
