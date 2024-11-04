@@ -29,6 +29,7 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/enescakir/emoji"
 	"github.com/gorilla/websocket"
+	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 	"gorgonia.org/tensor"
@@ -853,6 +854,10 @@ type Dot struct {
 	UnixTimestamp int64
 	Value         map[string]any
 }
+type ExposedDot struct {
+	UnixTimestamp int64   `json:"t"`
+	Value         float64 `json:"v"`
+}
 type ParsedDot struct {
 	UnixTimestamp int64
 	Dot           DotImpl
@@ -924,6 +929,31 @@ func hello(c echo.Context) error {
 		return err
 	}
 
+	arr := make([]map[string]any, 0)
+	for _, dot := range dots {
+
+		var dotValue DotImpl
+		switch CURRENT_DOT_VERSION {
+		case "v1":
+			dotValue = lo.ToPtr(NewDotV1(dot.Value))
+		case "v2":
+			dotValue = lo.ToPtr(NewDotV2(dot.Value))
+		case "v3":
+			dotValue = lo.ToPtr(NewDotV3(dot.Value))
+		default:
+			panic("unsupported version")
+
+		}
+		arr = append(arr, map[string]any{
+			"timestamp": dot.UnixTimestamp,
+			"dot":       dotValue.Value(),
+		})
+	}
+	encodedJsonValues, err := json.Marshal(arr)
+	if err != nil {
+		panic(err)
+	}
+
 	encodedImg := base64.StdEncoding.EncodeToString(data)
 	c.Response().Header().Set("content-type", "text/html")
 	return c.HTML(http.StatusOK, fmt.Sprintf(`
@@ -949,10 +979,25 @@ func hello(c echo.Context) error {
 			<p>the current value is <b>%.5f %v %s</b></p>
 			<p>value's range is 0 to 1. the higher, the more Emotion the network is feeling.</p>
 			<p>last couple hours:</p>
-			<img src="data:image/png;base64,%s" alt="dot historical" />
+			<!-- <img src="data:image/png;base64,%s" alt="dot historical" /> -->
+			<div id="myplot"></div>
 			<p>if you want to provide better algorithms or just look at code, here's the <a href="https://github.com/lun-4/bsky-dot">source code</a></p>
 		</body>
-	`, dotValue, dotEmoji, dotEmojiText, encodedImg))
+		<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
+		<script type="module">
+			const data = %s;
+
+			const plot = Plot.plot({
+			  marks: [
+			    Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"})
+			  ]
+			});
+			const div = document.querySelector("#myplot");
+			div.append(plot);
+			debugger;
+		</script>
+	`, dotValue, dotEmoji, dotEmojiText, encodedImg[:10], string(encodedJsonValues)))
 }
 
 // CosineSimilarity calculates the cosine similarity between two vectors `a` and `b`
