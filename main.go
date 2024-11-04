@@ -989,13 +989,13 @@ func hello(c echo.Context) error {
 			const data = %s;
 
 			const plot = Plot.plot({
-			  marks: [
-			    Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"})
-			  ]
+				marks: [
+					Plot.ruleY([0,1]),
+					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"})
+				]
 			});
 			const div = document.querySelector("#myplot");
 			div.append(plot);
-			debugger;
 		</script>
 	`, dotValue, dotEmoji, dotEmojiText, encodedImg[:10], string(encodedJsonValues)))
 }
