@@ -25,6 +25,10 @@ func testDotAlgorithm(state *State) {
 		dotTest(state, lo.ToPtr(NewEmptyDotV1()))
 	case "test-v2":
 		dotTest(state, lo.ToPtr(NewEmptyDotV2()))
+	case "test-v3":
+		dotTest(state, lo.ToPtr(NewEmptyDotV3()))
+	case "test-sentiment-wins":
+		dotTestSentiments(state, lo.ToPtr(NewEmptyDotV2()))
 	case "backfill":
 		if len(os.Args) < 4 {
 			panic("backfill action requires a version")
@@ -64,15 +68,21 @@ type DotImpl interface {
 	Debug()
 }
 
+type SE struct {
+	t int64
+	l float64
+}
+
 func dotTest(state *State, dotState DotImpl) {
 	now := time.Now()
 
-	startAll := now.Add(-24 * time.Hour)
+	startAll := now.Add(-48 * time.Hour)
 	startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
 	//startAll := now.Add(-1 * time.Hour)
 	endAll := now
 
 	dotValues := make([]Dot, 0)
+	sentimentCounts := make([]SE, 0)
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
@@ -110,10 +120,78 @@ func dotTest(state *State, dotState DotImpl) {
 		}
 
 		dotSnapshot := Dot{UnixTimestamp: startT.Unix(), Value: dotState.Serialize()}
-		log.Println(startT.Unix(), dotState.Value())
+		log.Println(startT, dotState.Value())
 		dotValues = append(dotValues, dotSnapshot)
+		sentimentCounts = append(sentimentCounts, SE{t: startT.Unix(), l: float64(len(sentiments)) / float64(10000)})
 	}
-	fname, err := GenerateDotPlot(dotValues, dotState.Version())
+	fname, err := GenerateDotPlotEpic(dotValues, dotState.Version(), sentimentCounts)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(fname)
+
+	// Create the command
+	cmd := exec.Command("feh", fname)
+
+	// Start the process
+	if err := cmd.Start(); err != nil {
+		panic(err)
+	}
+
+	if err := cmd.Wait(); err != nil {
+		panic(err)
+	}
+
+}
+
+func dotTestSentiments(state *State, dotState DotImpl) {
+	now := time.Now()
+
+	startAll := now.Add(-24 * time.Hour * 3)
+	startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
+	endAll := now
+
+	sentimentProportions := make([]map[string]float64, 0)
+	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
+		startT := t
+		endT := t.Add(dotState.TimePeriod())
+		assertGoodDotTimestamp(startT)
+		assertGoodDotTimestamp(endT)
+		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
+			startT.UnixMilli(), endT.UnixMilli(), "v3")
+		if err != nil {
+			panic(err)
+		}
+		sentiments := make([]string, 0)
+		for rows.Next() {
+			var postHash string
+			err := rows.Scan(&postHash)
+			if err != nil {
+				panic(err)
+			}
+
+			// for each event, get its sentiment (this should be a join maybe)
+			row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, state.cfg.embeddingVersion)
+			var sentimentData string
+			err = row.Scan(&sentimentData)
+			if err != nil {
+				slog.Error("no sentiment data found in sentiment_data table", slog.String("postHash", postHash))
+				continue
+			}
+			sentiments = append(sentiments, sentimentData)
+		}
+
+		props := make(map[string]float64)
+		if len(sentiments) > 0 {
+			props = sentimentToProportionMap(sentiments)
+			fmt.Println(t, props)
+		} else {
+			fmt.Println(t, "no sentiments")
+		}
+
+		sentimentProportions = append(sentimentProportions, props)
+	}
+	fname, err := generateSentimentPlot(sentimentProportions)
 	if err != nil {
 		panic(err)
 	}
@@ -157,6 +235,8 @@ func dotBackfill(state *State, version string) {
 		dotState = lo.ToPtr(NewEmptyDotV1())
 	case "v2":
 		dotState = lo.ToPtr(NewEmptyDotV2())
+	case "v3":
+		dotState = lo.ToPtr(NewEmptyDotV3())
 	default:
 		slog.Error("unsupported version", slog.String("version", version))
 		panic("unsupported version")

@@ -17,8 +17,6 @@ type DotV2 struct {
 	LastSentiments []DotV2Sentiment `json:"s"`
 }
 
-type DotVwState float64
-
 const dotV2SentimentSize = 40
 
 func NewDotV2(previousState map[string]any) DotV2 {
@@ -129,23 +127,18 @@ func (d *DotV2) Debug() {
 func (d *DotV2) Forward(timestamp time.Time, sentiments []string) error {
 	proportions := sentimentToProportionMap(sentiments)
 
-	epsilonIncrease := 0.02
-	epsilonDecrease := 0.007
-	var winningSentiment string
-	for sentiment, proportion := range proportions {
-		if proportion > 0.33 {
-			winningSentiment = sentiment
-		}
-	}
+	epsilonIncrease := 0.06
+	epsilonDecrease := 0.009
+	//var winningSentiment string
+	//for sentiment, proportion := range proportions {
+	//	if proportion > 0.33 {
+	//		winningSentiment = sentiment
+	//	}
+	//}
+	emotions := (proportions["positive"] + proportions["negative"])
 
-	if winningSentiment == "positive" || winningSentiment == "negative" {
-		winningSentimentPreviousRun := d.lastWinningSentiment(timestamp)
-		currentSentimentStillWins := winningSentimentPreviousRun == winningSentiment
-		//fmt.Println(winningSentimentPreviousRun, winningSentiment)
-		d.LastSentiments = appendToMaxLen(d.LastSentiments, dotV2SentimentSize, DotV2Sentiment{Timestamp: timestamp.Unix(), Value: winningSentiment})
-		if currentSentimentStillWins {
-			d.D = limitDot(d.D + epsilonIncrease)
-		}
+	if emotions > proportions["neutral"] {
+		d.D = limitDot(d.D + (epsilonIncrease))
 		return nil
 	} else {
 		// no convergence, decrease by epsilon
