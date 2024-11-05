@@ -1018,7 +1018,7 @@ func hello(c echo.Context) error {
 		<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 		<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
 		<script type="module">
-			const data = %s.map(d => ({...d, date: new Date(d.timestamp * 1000)}));
+			const data = %s.map(d => ({...d, timestamp: new Date(d.timestamp * 1000)}));
 
 			const plot = Plot.plot({
 				marginTop: 20,
@@ -1029,7 +1029,7 @@ func hello(c echo.Context) error {
 				grid: true,
 				marks: [
 					Plot.ruleY([0,1]),
-					Plot.line(data, {x: "date", y: "dot", stroke: "red"}),
+					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"}),
 					Plot.frame()
 				]
 			});
