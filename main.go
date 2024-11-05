@@ -126,7 +126,7 @@ func (s *State) PrintState() {
 	slog.Info("  posts", slog.Any("count", s.postCounter.LockAndGet()))
 }
 
-func eventMetrics(state *State, eventChan chan Post, restartIncomingWorker chan bool) {
+func eventMetrics(state *State, eventChan chan Post) {
 	ticker := time.Tick(time.Second * 1)
 	for {
 		<-ticker
@@ -138,9 +138,6 @@ func eventMetrics(state *State, eventChan chan Post, restartIncomingWorker chan 
 			events := len(eventChan)
 			if events > 999 {
 				slog.Warn("too many events! system is bottlenecked..", slog.Int("events", events))
-			}
-			if incoming == 0 {
-				restartIncomingWorker <- true
 			}
 			log.Printf("%d from upstream, %d posts, %d processed events a second (channel len %d)",
 				incoming, posts, processed, events)
@@ -801,11 +798,9 @@ func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
 	//sentimentChannel := make(chan string, 1000)
 
-	restartWorkerChannel := make(chan bool, 1)
-
 	go upstreamWorker(state, eventChannel)
 
-	go eventMetrics(state, eventChannel, restartWorkerChannel)
+	go eventMetrics(state, eventChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
 
 	urls := make([]string, 0)
