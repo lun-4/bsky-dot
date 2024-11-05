@@ -139,8 +139,12 @@ func (d *DotV3) Forward(timestamp time.Time, sentiments []string) error {
 		d.CurrentBaseline.Initialized = true
 		d.CurrentBaseline.Timestamp = timestamp.Unix()
 
-		// since we reset the baseline, set dot to 0.5
-		d.D = 0.5
+		// we reset the baseline, so shift it around
+		if d.D > 0.5 {
+			d.D -= 0.08
+		} else {
+			d.D += 0.08
+		}
 
 		// reset NextBaseline
 		d.NextBaseline.Reset()
