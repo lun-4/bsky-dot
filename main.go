@@ -907,7 +907,7 @@ func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
 		return emoji.GreenCircle, "the network's humor meter is average."
 	} else if value < 0.9 {
 		return emoji.YellowCircle, "the network is feeling something."
-	} else if value < 1.0 {
+	} else if value <= 1.0 {
 		return emoji.RedCircle, "the network is Feeling It. A lot. it is feeling Something, a lot."
 	}
 	panic("invalid value")
