@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 
-	"github.com/samber/lo"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/plotter"
 	"gonum.org/v1/plot/plotutil"
@@ -14,18 +13,7 @@ func toXY(data []Dot, dotVersion string) plotter.XYs {
 	pts := make(plotter.XYs, len(data))
 	for index, dot := range data {
 		pts[index].X = float64(dot.UnixTimestamp)
-		var dotValue DotImpl
-		switch dotVersion {
-		case "v1":
-			dotValue = lo.ToPtr(NewDotV1(dot.Value))
-		case "v2":
-			dotValue = lo.ToPtr(NewDotV2(dot.Value))
-		case "v3":
-			dotValue = lo.ToPtr(NewDotV3(dot.Value))
-		default:
-			panic("unsupported version")
-
-		}
+		dotValue := NewDot(dotVersion, dot.Value)
 		pts[index].Y = dotValue.Value()
 	}
 	return pts

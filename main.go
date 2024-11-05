@@ -890,7 +890,7 @@ func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 	return dots, nil
 }
 
-const CURRENT_DOT_VERSION = "v3"
+const CURRENT_DOT_VERSION = "v4"
 
 func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
 	if value < 0.1 {
@@ -905,6 +905,41 @@ func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
 		return emoji.RedCircle, "the network is Feeling It. A lot. it is feeling Something, a lot."
 	}
 	panic("invalid value")
+}
+
+func NewDot(version string, data map[string]any) DotImpl {
+	var dotValue DotImpl
+	switch CURRENT_DOT_VERSION {
+	case "v1":
+		dotValue = lo.ToPtr(NewDotV1(data))
+	case "v2":
+		dotValue = lo.ToPtr(NewDotV2(data))
+	case "v3":
+		dotValue = lo.ToPtr(NewDotV3(data))
+	case "v4":
+		dotValue = lo.ToPtr(NewDotV4(data))
+	default:
+		panic("unsupported version " + version)
+	}
+	return dotValue
+}
+
+func NewEmptyDot(version string) DotImpl {
+	var dotValue DotImpl
+	switch CURRENT_DOT_VERSION {
+	case "v1":
+		dotValue = lo.ToPtr(NewEmptyDotV1())
+	case "v2":
+		dotValue = lo.ToPtr(NewEmptyDotV2())
+	case "v3":
+		dotValue = lo.ToPtr(NewEmptyDotV3())
+	case "v4":
+		dotValue = lo.ToPtr(NewEmptyDotV4())
+	default:
+		panic("unsupported version " + version)
+
+	}
+	return dotValue
 }
 
 // Handler
@@ -933,19 +968,7 @@ func hello(c echo.Context) error {
 
 	arr := make([]map[string]any, 0)
 	for _, dot := range dots {
-
-		var dotValue DotImpl
-		switch CURRENT_DOT_VERSION {
-		case "v1":
-			dotValue = lo.ToPtr(NewDotV1(dot.Value))
-		case "v2":
-			dotValue = lo.ToPtr(NewDotV2(dot.Value))
-		case "v3":
-			dotValue = lo.ToPtr(NewDotV3(dot.Value))
-		default:
-			panic("unsupported version")
-
-		}
+		dotValue := NewDot(CURRENT_DOT_VERSION, dot.Value)
 		arr = append(arr, map[string]any{
 			"timestamp": dot.UnixTimestamp,
 			"dot":       dotValue.Value(),

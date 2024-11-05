@@ -31,6 +31,8 @@ func testDotAlgorithm(state *State) {
 		dotTestWithAllData(state, "v2", "")
 	case "test-v3":
 		dotTestWithAllData(state, "v3", "")
+	case "test-v4":
+		dotTestWithAllData(state, "v4", "")
 	case "test-dot":
 		if len(os.Args) < 4 {
 			panic("test-dot requires version")
@@ -95,18 +97,7 @@ type SE struct {
 }
 
 func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
-	var dotState DotImpl
-
-	switch dotVersion {
-	case "v1":
-		dotState = lo.ToPtr(NewEmptyDotV1())
-	case "v2":
-		dotState = lo.ToPtr(NewEmptyDotV2())
-	case "v3":
-		dotState = lo.ToPtr(NewEmptyDotV3())
-	default:
-		panic("unsupported version")
-	}
+	dotState := NewEmptyDot(dotVersion)
 	now := time.Now()
 
 	var startAll time.Time
@@ -324,18 +315,7 @@ func dotBackfill(state *State, version string) {
 
 	// keep walking TimePeriod() steps until we get to a timestamp that is within the last 30 minutes
 	// (the dot processor is the one that will do final backfilling of the last N amounts of time. this process is just to ease it up)
-	var dotState DotImpl
-	switch version {
-	case "v1":
-		dotState = lo.ToPtr(NewEmptyDotV1())
-	case "v2":
-		dotState = lo.ToPtr(NewEmptyDotV2())
-	case "v3":
-		dotState = lo.ToPtr(NewEmptyDotV3())
-	default:
-		slog.Error("unsupported version", slog.String("version", version))
-		panic("unsupported version")
-	}
+	dotState := NewEmptyDot(version)
 
 	endAll := now.Add(-30 * time.Minute)
 
@@ -455,18 +435,7 @@ func lastDotV2(state *State, version string) (ParsedDot, bool) {
 		panic("invalid dot value")
 	}
 
-	var dot DotImpl
-	switch version {
-	case "v1":
-		dot = lo.ToPtr(NewDotV1(dotData))
-	case "v2":
-		dot = lo.ToPtr(NewDotV2(dotData))
-	case "v3":
-		dot = lo.ToPtr(NewDotV3(dotData))
-	default:
-		panic("invalid version")
-
-	}
+	dot := NewDot(version, dotData)
 	return ParsedDot{
 		UnixTimestamp: maxTimestamp,
 		Dot:           dot,
