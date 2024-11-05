@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/md5"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -22,11 +25,28 @@ func testDotAlgorithm(state *State) {
 
 	switch dotAction {
 	case "test":
-		dotTest(state, lo.ToPtr(NewEmptyDotV1()))
+		dotTestWithAllData(state, "v1", "")
 	case "test-v2":
-		dotTest(state, lo.ToPtr(NewEmptyDotV2()))
+		dotTestWithAllData(state, "v2", "")
 	case "test-v3":
-		dotTest(state, lo.ToPtr(NewEmptyDotV3()))
+		dotTestWithAllData(state, "v3", "")
+	case "test-dot":
+		if len(os.Args) < 4 {
+			panic("test-dot requires version")
+		}
+		dotVersion := os.Args[3]
+		var allTestData string
+		if len(os.Args) > 4 {
+			allTestData = os.Args[4]
+		}
+		dotTestWithAllData(state, dotVersion, allTestData)
+	case "load-test-data":
+		if len(os.Args) < 5 {
+			panic("load-test-data requires format and path")
+		}
+		format := os.Args[3]
+		dataPath := os.Args[4]
+		dotLoadTestData(state, format, dataPath)
 	case "test-sentiment-wins":
 		dotTestSentiments(state, lo.ToPtr(NewEmptyDotV2()))
 	case "backfill":
@@ -73,13 +93,49 @@ type SE struct {
 	l float64
 }
 
-func dotTest(state *State, dotState DotImpl) {
+func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
+	var dotState DotImpl
+
+	switch dotVersion {
+	case "v1":
+		dotState = lo.ToPtr(NewEmptyDotV1())
+	case "v2":
+		dotState = lo.ToPtr(NewEmptyDotV2())
+	case "v3":
+		dotState = lo.ToPtr(NewEmptyDotV3())
+	default:
+		panic("unsupported version")
+	}
 	now := time.Now()
 
-	startAll := now.Add(-48 * time.Hour)
-	startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
-	//startAll := now.Add(-1 * time.Hour)
-	endAll := now
+	var startAll time.Time
+	var endAll time.Time
+	var sentimentAnalyst string
+	if allTestData == "true" {
+		row := state.db.QueryRow("SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp ASC LIMIT 1", "vTEST")
+		var minUnixTimestamp int64
+		err := row.Scan(&minUnixTimestamp)
+		if err != nil {
+			panic(err)
+		}
+
+		row = state.db.QueryRow("SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp DESC LIMIT 1", "vTEST")
+		var maxUnixTimestamp int64
+		err = row.Scan(&maxUnixTimestamp)
+		if err != nil {
+			panic(err)
+		}
+
+		startAll = time.UnixMilli(minUnixTimestamp)
+		startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
+		endAll = time.UnixMilli(maxUnixTimestamp)
+		sentimentAnalyst = "vTEST"
+	} else {
+		startAll = now.Add(-48 * time.Hour)
+		startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
+		endAll = now
+		sentimentAnalyst = state.cfg.embeddingVersion
+	}
 
 	dotValues := make([]Dot, 0)
 	sentimentCounts := make([]SE, 0)
@@ -89,7 +145,7 @@ func dotTest(state *State, dotState DotImpl) {
 		assertGoodDotTimestamp(startT)
 		assertGoodDotTimestamp(endT)
 		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
-			startT.UnixMilli(), endT.UnixMilli(), "v3")
+			startT.UnixMilli(), endT.UnixMilli(), sentimentAnalyst)
 		if err != nil {
 			panic(err)
 		}
@@ -102,7 +158,7 @@ func dotTest(state *State, dotState DotImpl) {
 			}
 
 			// for each event, get its sentiment (this should be a join maybe)
-			row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, state.cfg.embeddingVersion)
+			row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, sentimentAnalyst)
 			var sentimentData string
 			err = row.Scan(&sentimentData)
 			if err != nil {
@@ -634,5 +690,85 @@ func dotProcessor_V2(state *State, version string) {
 				lastProcessedTimestamp = startT
 			}
 		}
+	}
+}
+
+type InterV1Prediction struct {
+	Label string  `json:"label"`
+	Score float64 `json:"score"`
+}
+
+type InterV1AnalOutput struct {
+	Predictions []InterV1Prediction `json:"predictions"`
+}
+
+type InterV1Analysis struct {
+	Output InterV1AnalOutput `json:"output"`
+}
+
+type InterV1Post struct {
+	Timestamp  int64           `json:"timestamp"`
+	Text       string          `json:"text"`
+	Analysis   InterV1Analysis `json:"anal"`
+	Asciiratio float64         `json:"asciiratio"`
+}
+
+type InterV1 []InterV1Post
+
+func dotLoadTestData(state *State, format string, dataPath string) {
+	if state.cfg.databasePath == DEFAULT_DATABASE_PATH {
+		fmt.Println("ERROR: testing with default database path, WE WILL NOT LOAD TEST DATA INTO THE PRODUCTION DATABASE.")
+		return
+	}
+
+	switch format {
+	case "inter_v1":
+		fd, err := os.Open(dataPath)
+		if err != nil {
+			panic(err)
+		}
+
+		v, err := io.ReadAll(fd)
+		if err != nil {
+			panic(err)
+		}
+
+		var interV1 InterV1
+		err = json.Unmarshal(v, &interV1)
+		if err != nil {
+			panic(err)
+		}
+
+		for idx, post := range interV1 {
+			textHashBytes := md5.Sum([]byte(post.Text))
+			textHash := hex.EncodeToString(textHashBytes[:])
+			postTimestamp := time.Unix(post.Timestamp, 0)
+			log.Println("processing", idx, "/", len(interV1), "posts..", post.Timestamp, textHash)
+
+			if len(post.Analysis.Output.Predictions) == 0 {
+				continue
+			}
+
+			func() {
+				tx, err := state.db.Begin()
+				defer tx.Commit()
+				if err != nil {
+					panic(err)
+				}
+				_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
+			ON CONFLICT DO NOTHING`,
+					textHash, post.Text, "vTEST", post.Analysis.Output.Predictions[0].Label)
+				if err != nil {
+					slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
+				}
+				_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
+					postTimestamp.UnixMilli(), textHash, "vTEST")
+				if err != nil {
+					slog.Error("error in db insert", slog.String("err", err.Error()))
+				}
+			}()
+		}
+	default:
+		fmt.Println("Unknown format:", format)
 	}
 }

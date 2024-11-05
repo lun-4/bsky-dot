@@ -66,6 +66,8 @@ type Config struct {
 	numWorkers       uint
 }
 
+const DEFAULT_DATABASE_PATH = "./dot.db"
+
 func (c *Config) Defaults() {
 	if c.embeddingUrl == "" {
 		panic("must have LLAMACPP_EMBEDDING_URL set")
@@ -74,7 +76,7 @@ func (c *Config) Defaults() {
 		c.httpPort = "8080"
 	}
 	if c.databasePath == "" {
-		c.databasePath = "./dot.db"
+		c.databasePath = DEFAULT_DATABASE_PATH
 	}
 }
 
