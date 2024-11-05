@@ -112,7 +112,7 @@ func generateSentimentPlot(props []map[string]float64) (string, error) {
 
 	// Save the plot to a PNG file.
 	fd, err := os.CreateTemp("", "*test.png")
-	if err := p.Save(13*vg.Inch, 5*vg.Inch, fd.Name()); err != nil {
+	if err := p.Save(15*vg.Inch, 6*vg.Inch, fd.Name()); err != nil {
 		return "", err
 	}
 	return fd.Name(), nil

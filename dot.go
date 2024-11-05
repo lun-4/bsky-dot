@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"math/rand"
 	"os"
 	"os/exec"
 	"time"
@@ -111,7 +112,9 @@ func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
 	var startAll time.Time
 	var endAll time.Time
 	var sentimentAnalyst string
-	if allTestData == "true" {
+	var sentimentGenerator func() []string
+	switch allTestData {
+	case "true":
 		row := state.db.QueryRow("SELECT timestamp FROM sentiment_events WHERE sentiment_analyst = ? ORDER BY timestamp ASC LIMIT 1", "vTEST")
 		var minUnixTimestamp int64
 		err := row.Scan(&minUnixTimestamp)
@@ -130,7 +133,27 @@ func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
 		startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
 		endAll = time.UnixMilli(maxUnixTimestamp)
 		sentimentAnalyst = "vTEST"
-	} else {
+	case "random-many":
+		startAll = now.Add(-48 * time.Hour)
+		startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
+		endAll = now
+		sentimentGenerator = func() []string {
+			sentiment := rand.Intn(2)
+			sentiments := make([]string, 1000)
+			for i := range sentiments {
+				switch sentiment {
+				case 0:
+					sentiments[i] = "positive"
+				case 1:
+					sentiments[i] = "negative"
+				default:
+					panic("fuck")
+				}
+			}
+			return sentiments
+		}
+		sentimentAnalyst = ""
+	default:
 		startAll = now.Add(-48 * time.Hour)
 		startAll = startAll.Add(1 * time.Hour).Add(-1 * time.Duration(startAll.Second()) * time.Second).Add(-1 * time.Duration(startAll.Nanosecond()) * time.Nanosecond)
 		endAll = now
@@ -149,28 +172,33 @@ func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
 		endT := t.Add(dotState.TimePeriod())
 		assertGoodDotTimestamp(startT)
 		assertGoodDotTimestamp(endT)
-		rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
-			startT.UnixMilli(), endT.UnixMilli(), sentimentAnalyst)
-		if err != nil {
-			panic(err)
-		}
 		sentiments := make([]string, 0)
-		for rows.Next() {
-			var postHash string
-			err := rows.Scan(&postHash)
+		if sentimentAnalyst != "" {
+
+			rows, err := state.db.Query(`SELECT post_hash FROM sentiment_events WHERE timestamp > ? and timestamp < ? and sentiment_analyst = ?`,
+				startT.UnixMilli(), endT.UnixMilli(), sentimentAnalyst)
 			if err != nil {
 				panic(err)
 			}
+			for rows.Next() {
+				var postHash string
+				err := rows.Scan(&postHash)
+				if err != nil {
+					panic(err)
+				}
 
-			// for each event, get its sentiment (this should be a join maybe)
-			row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, sentimentAnalyst)
-			var sentimentData string
-			err = row.Scan(&sentimentData)
-			if err != nil {
-				slog.Error("no sentiment data found in sentiment_data table", slog.String("postHash", postHash))
-				continue
+				// for each event, get its sentiment (this should be a join maybe)
+				row := state.db.QueryRow(`SELECT sentiment_data FROM sentiment_data WHERE post_hash=? AND sentiment_analyst=?`, postHash, sentimentAnalyst)
+				var sentimentData string
+				err = row.Scan(&sentimentData)
+				if err != nil {
+					slog.Error("no sentiment data found in sentiment_data table", slog.String("postHash", postHash))
+					continue
+				}
+				sentiments = append(sentiments, sentimentData)
 			}
-			sentiments = append(sentiments, sentimentData)
+		} else {
+			sentiments = sentimentGenerator()
 		}
 
 		if len(sentiments) > 0 {
