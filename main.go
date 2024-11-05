@@ -1002,7 +1002,7 @@ func hello(c echo.Context) error {
 		</head>
 		<body>
 			<h1>the bluesky dot</h1>
-			<h2>a funny experiment on the firehose and processing data at scale, 
+			<h2>a funny experiment on the firehose and processing data at scale,
 			<p>measuring the amount of Emotion in the bluesky network</p><h2>
 			<h3>by <a href="https://bsky.app/profile/l4.pm">@l4.pm</a></h3>
 			<h5>and <a href="https://bsky.app/profile/natalie.ee">@natalie.ee</a> for the original idea and hardware</h5>
@@ -1018,7 +1018,7 @@ func hello(c echo.Context) error {
 		<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 		<script src="https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6"></script>
 		<script type="module">
-			const data = %s;
+			const data = %s.map(d => ({...d, timestamp: new Date(d.timestamp * 1000)}));
 
 			const plot = Plot.plot({
 				marginTop: 20,
