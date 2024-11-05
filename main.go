@@ -993,7 +993,7 @@ func hello(c echo.Context) error {
 				marginRight: 20,
 				marginBottom: 30,
 				marginLeft: 40,
-				width: 1000,
+				width: 1500,
 				grid: true,
 				marks: [
 					Plot.ruleY([0,1]),
