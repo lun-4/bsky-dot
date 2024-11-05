@@ -206,7 +206,6 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 
 					postText, ok := rec["text"].(string)
 					if ok {
-
 						if postText == "" {
 							return nil
 						}
@@ -235,8 +234,8 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 						}()
 						eventChannel <- Post{text: postText, hash: textHash}
 					} else {
-						slog.Error("invalid event. expected a text field...", slog.Any("record", rec))
-						panic("invalid post data. exptected text to be a string...")
+						slog.Error("invalid event. expected a text field...", slog.Any("record", rec), slog.Any("text?", rec["text"]))
+						return nil
 					}
 
 				}
