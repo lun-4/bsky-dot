@@ -254,7 +254,7 @@ type Post struct {
 	hash string
 }
 
-func eventProcessor(state *State, eventChannel <-chan Post, upstreamUrl string) {
+func eventProcessor(state *State, eventChannel chan Post, upstreamUrl string) {
 	switch state.cfg.embeddingVersion {
 	case "v1":
 		eventProcessor_V1(state, eventChannel)
@@ -302,14 +302,20 @@ func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 	}
 }
 
-func eventProcessor_V3(state *State, eventChannel <-chan Post, upstreamUrl string) {
+func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string) {
 
 	newCfg := state.cfg
 	newCfg.embeddingUrl = upstreamUrl
 	for {
 		post := <-eventChannel
 		slog.Debug("processing event", slog.String("text", post.text))
-		sentiment := sentimentFromText_V3(newCfg, post.text)
+		sentiment, err := sentimentFromText_V3(newCfg, post.text)
+		if err != nil {
+			slog.Error("an error happened while sending post to sentiment worker, resubmitting in 10ms..", slog.String("error", err.Error()))
+			time.Sleep(10 * time.Millisecond)
+			eventChannel <- post
+			continue
+		}
 
 		func() {
 			tx, err := state.db.Begin()

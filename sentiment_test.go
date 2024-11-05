@@ -162,7 +162,7 @@ func Test_SentimentFromText_V3(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.text, func(t *testing.T) {
-			got := sentimentFromText_V3(fakeState.cfg, tt.text)
+			got, _ := sentimentFromText_V3(fakeState.cfg, tt.text)
 			assert.Equal(t, tt.want, got)
 		})
 	}
