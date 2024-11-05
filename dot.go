@@ -139,6 +139,11 @@ func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
 
 	dotValues := make([]Dot, 0)
 	sentimentCounts := make([]SE, 0)
+	sentimentProps := make(map[string][]SE)
+	sentimentProps["neutral"] = make([]SE, 0)
+	sentimentProps["positive"] = make([]SE, 0)
+	sentimentProps["negative"] = make([]SE, 0)
+
 	for t := startAll; t.After(endAll) == false; t = t.Add(dotState.TimePeriod()) {
 		startT := t
 		endT := t.Add(dotState.TimePeriod())
@@ -179,9 +184,14 @@ func dotTestWithAllData(state *State, dotVersion string, allTestData string) {
 		log.Println(startT, dotState.Value())
 		dotValues = append(dotValues, dotSnapshot)
 		sentimentCounts = append(sentimentCounts, SE{t: startT.Unix(), l: float64(len(sentiments)) / float64(10000)})
+		proportions := sentimentToProportionMap(sentiments)
+		for label, prop := range proportions {
+
+			sentimentProps[label] = append(sentimentProps[label], SE{t: startT.Unix(), l: prop})
+		}
 	}
 	log.Println("there are", len(dotValues), "dot values")
-	fname, err := GenerateDotPlotEpic(dotValues, dotState.Version(), sentimentCounts)
+	fname, err := GenerateDotPlotEpic(dotValues, dotState.Version(), sentimentCounts, sentimentProps)
 	if err != nil {
 		panic(err)
 	}

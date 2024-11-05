@@ -51,14 +51,20 @@ func GenerateDotPlot(dotData []Dot, dotVersion string) (string, error) {
 	return fd.Name(), nil
 }
 
-func GenerateDotPlotEpic(dotData []Dot, dotVersion string, sentiments []SE) (string, error) {
+func GenerateDotPlotEpic(dotData []Dot, dotVersion string, sentiments []SE, props map[string][]SE) (string, error) {
 	p := plot.New()
 
 	p.Title.Text = "bsky dot"
 	p.X.Label.Text = "time"
 	p.Y.Label.Text = "bsky dot"
 
-	err := plotutil.AddLinePoints(p, "Dot", toXY(dotData, dotVersion), "Sentiments", sentimentXYEpic(sentiments))
+	err := plotutil.AddLinePoints(p,
+		"Dot", toXY(dotData, dotVersion),
+		//	"Sentiments", sentimentXYEpic(sentiments),
+		"positive", sentimentXYEpic(props["positive"]),
+		"negative", sentimentXYEpic(props["negative"]),
+	//	"neutral", sentimentXYEpic(props["neutral"]),
+	)
 	if err != nil {
 		return "", err
 	}
