@@ -56,7 +56,7 @@ func (d *DotV4) TimePeriod() time.Duration {
 	return 1 * time.Minute
 }
 func (d *DotV4) Version() string {
-	return "v3"
+	return "v4"
 }
 
 func (d *DotV4) Value() float64 {

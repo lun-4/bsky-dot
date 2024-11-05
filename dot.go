@@ -330,7 +330,7 @@ func dotBackfill(state *State, version string) {
 		var maybeData string
 		err := row.Scan(&maybeData)
 		if err == nil {
-			slog.Info("dot data already exists here, skipping", slog.Int64("timestamp", startT.Unix()))
+			slog.Info("dot data already exists here, skipping", slog.Int64("timestamp", startT.Unix()), slog.String("dotVersion", dotState.Version()))
 			continue
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
