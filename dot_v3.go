@@ -107,8 +107,7 @@ func (d *DotV3) Debug() {
 
 func (d *DotV3) Forward(timestamp time.Time, sentiments []string) error {
 	currentBaselineTimestamp := time.Unix(d.CurrentBaseline.Timestamp, 0)
-	currentBaselineDate := time.Date(currentBaselineTimestamp.Year(), currentBaselineTimestamp.Month(), currentBaselineTimestamp.Day(), 0, 0, 0, 0, currentBaselineTimestamp.Location())
-	newDate := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
+
 	proportions := sentimentToProportionMap(sentiments)
 	var avgs map[string]float64
 	if !d.CurrentBaseline.Initialized {
@@ -117,18 +116,20 @@ func (d *DotV3) Forward(timestamp time.Time, sentiments []string) error {
 		d.CurrentBaseline.Averages = make(map[string]float64)
 		d.CurrentBaseline.Initialized = true
 		d.CurrentBaseline.Timestamp = timestamp.Unix()
-		d.CurrentBaseline.Averages["netural"] = 0.4
-		d.CurrentBaseline.Averages["positive"] = 0.35
-		d.CurrentBaseline.Averages["negative"] = 0.2
+		d.CurrentBaseline.Averages["positive"] = 0.45
+		d.CurrentBaseline.Averages["negative"] = 0.35
 	}
-	if newDate.Compare(currentBaselineDate) == 0 {
+
+	delta := timestamp.Sub(currentBaselineTimestamp)
+	nextStateReady := delta.Minutes() >= 60
+	if !nextStateReady {
 		fmt.Println("CurrentBaseline is equal to new date, and its initialized")
 		// use CurrentBaseline as it is still current to the given date
 		avgs = d.CurrentBaseline.Averages
 
 		// add the current proportions to the next baseline
 		d.NextBaseline.Forward(proportions)
-	} else if newDate.Compare(currentBaselineDate) == 1 {
+	} else {
 		fmt.Println("ticking forward to the next date")
 		// compute new baseline from previous baseline (currently called "next"), then reset next
 		avgs = d.NextBaseline.Averages()
@@ -143,14 +144,12 @@ func (d *DotV3) Forward(timestamp time.Time, sentiments []string) error {
 
 		// reset NextBaseline
 		d.NextBaseline.Reset()
-	} else {
-		panic("invalid state transition, time must not flow backwards")
 	}
 
 	for sentiment, proportion := range proportions {
 		avgProportion := avgs[sentiment]
 		// if its not neutral AND it's acting above the average for the last day, increase the dot value because of that sentiment
-		// proportion also has to win against its average + epsilon
+		// proportion has to win against its average
 		if sentiment == "positive" || sentiment == "negative" {
 			if proportion > avgProportion {
 				d.D = limitDot(d.D + 0.01)

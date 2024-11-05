@@ -124,6 +124,7 @@ func dotTest(state *State, dotState DotImpl) {
 		dotValues = append(dotValues, dotSnapshot)
 		sentimentCounts = append(sentimentCounts, SE{t: startT.Unix(), l: float64(len(sentiments)) / float64(10000)})
 	}
+	log.Println("there are", len(dotValues), "dot values")
 	fname, err := GenerateDotPlotEpic(dotValues, dotState.Version(), sentimentCounts)
 	if err != nil {
 		panic(err)
