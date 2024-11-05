@@ -980,7 +980,7 @@ func hello(c echo.Context) error {
 			<h4>i am not good at web design and i had a self-imposed deadline to finish this. it is what it is.</h4>
 			<p>the current value is <b>%.5f %v %s</b></p>
 			<p>value's range is 0 to 1. the higher, the more Emotion the network is feeling.</p>
-			<p>last couple hours:</p>
+			<p>last two days:</p>
 			<!-- <img src="data:image/png;base64,%s" alt="dot historical" /> -->
 			<div id="myplot"></div>
 			<p>if you want to provide better algorithms or just look at code, here's the <a href="https://github.com/lun-4/bsky-dot">source code</a></p>
