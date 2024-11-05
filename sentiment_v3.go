@@ -35,6 +35,9 @@ func sentimentFromText_V3(cfg Config, text string) (string, error) {
 		return "", fmt.Errorf("failed to create request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if cfg.embeddingToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.embeddingToken))
+	}
 	res, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %v", err)

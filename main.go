@@ -61,6 +61,7 @@ type Config struct {
 	upstreamType     UpstreamType
 	httpPort         string
 	embeddingUrl     string
+	embeddingToken   string
 	embeddingVersion string
 	debug            bool
 	numWorkers       uint
@@ -373,6 +374,7 @@ func main() {
 		httpPort:         os.Getenv("HTTP_PORT"),
 		debug:            os.Getenv("DEBUG") != "",
 		embeddingUrl:     os.Getenv("LLAMACPP_EMBEDDING_URL"),
+		embeddingToken:   os.Getenv("AUTH_TOKEN"),
 		embeddingVersion: "v3",
 		numWorkers:       getEnvUint("NUM_WORKERS", 3),
 	}
