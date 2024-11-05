@@ -1022,15 +1022,18 @@ func hello(c echo.Context) error {
 
 			const plot = Plot.plot({
 				marginTop: 20,
-				marginRight: 20,
+				marginRight: 40,
 				marginBottom: 30,
 				marginLeft: 40,
 				width: 1500,
-				grid: true,
+				x: {label: "time"},
+        y: {domain: [0, 1], grid: true},
 				marks: [
-					Plot.ruleY([0,1]),
-					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red"}),
-					Plot.frame()
+					Plot.frame(),
+					Plot.axisY({label: "emotion"}),
+					Plot.axisY({label: null, anchor: "right"}),
+					Plot.line(data, {x: "timestamp", y: "dot", stroke: "red", markerStart: 'circle-stroke'}),
+					Plot.crosshairX(data, {x: "timestamp", y: "dot"})
 				]
 			});
 			const div = document.querySelector("#myplot");
