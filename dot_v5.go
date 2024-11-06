@@ -26,7 +26,7 @@ type V5NextBaseline struct {
 
 func (nb V5NextBaseline) Average() float64 {
 	if nb.Count == 0 {
-		return 0
+		return 0.5 // default to 0.5 (hald emotion) in case we're running at a no-data period
 	}
 	return nb.Sum / nb.Count
 }
