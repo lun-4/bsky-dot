@@ -382,7 +382,7 @@ func main() {
 	if cfg.debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
-	f, err := os.OpenFile("dot.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile("dot.log?_txlock=immediate", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
@@ -402,6 +402,11 @@ func main() {
 	// TODO rest of tables
 	_, err = db.Exec(`
 	PRAGMA journal_mode=WAL;
+	PRAGMA busy_timeout = 5000;
+	PRAGMA synchronous = NORMAL;
+	PRAGMA cache_size = 1000000000;
+	PRAGMA foreign_keys = true;
+	PRAGMA temp_store = memory;
 	CREATE TABLE IF NOT EXISTS original_embeddings (
 		post text primary key,
 		embedding_version text,
