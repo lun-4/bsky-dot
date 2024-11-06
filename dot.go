@@ -333,6 +333,13 @@ func dotBackfill(state *State, version string) {
 		err := row.Scan(&maybeData)
 		if err == nil {
 			slog.Info("dot data already exists here, skipping", slog.Int64("timestamp", startT.Unix()), slog.String("dotVersion", dotState.Version()))
+			var anyDotData map[string]any
+			err := json.Unmarshal([]byte(maybeData), &anyDotData)
+			if err != nil {
+				slog.Error("error unmarshalling dot data", slog.String("err", err.Error()), slog.String("data", maybeData), slog.String("version", version))
+				panic(err)
+			}
+			dotState = NewDot(version, anyDotData)
 			continue
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
