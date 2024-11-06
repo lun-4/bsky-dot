@@ -33,6 +33,8 @@ func testDotAlgorithm(state *State) {
 		dotTestWithAllData(state, "v3", "")
 	case "test-v4":
 		dotTestWithAllData(state, "v4", "")
+	case "test-v5":
+		dotTestWithAllData(state, "v5", "")
 	case "test-dot":
 		if len(os.Args) < 4 {
 			panic("test-dot requires version")

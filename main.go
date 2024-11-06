@@ -892,7 +892,7 @@ func GetLastCoupleDots(state *State, version string) ([]Dot, error) {
 	return dots, nil
 }
 
-const CURRENT_DOT_VERSION = "v4"
+const CURRENT_DOT_VERSION = "v5"
 
 func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
 	if value < 0.1 {
@@ -911,7 +911,7 @@ func dotEmojiFromValue(value float64) (emoji.Emoji, string) {
 
 func NewDot(version string, data map[string]any) DotImpl {
 	var dotValue DotImpl
-	switch CURRENT_DOT_VERSION {
+	switch version {
 	case "v1":
 		dotValue = lo.ToPtr(NewDotV1(data))
 	case "v2":
@@ -920,6 +920,8 @@ func NewDot(version string, data map[string]any) DotImpl {
 		dotValue = lo.ToPtr(NewDotV3(data))
 	case "v4":
 		dotValue = lo.ToPtr(NewDotV4(data))
+	case "v5":
+		dotValue = lo.ToPtr(NewDotV5(data))
 	default:
 		panic("unsupported version " + version)
 	}
@@ -928,7 +930,7 @@ func NewDot(version string, data map[string]any) DotImpl {
 
 func NewEmptyDot(version string) DotImpl {
 	var dotValue DotImpl
-	switch CURRENT_DOT_VERSION {
+	switch version {
 	case "v1":
 		dotValue = lo.ToPtr(NewEmptyDotV1())
 	case "v2":
@@ -937,6 +939,8 @@ func NewEmptyDot(version string) DotImpl {
 		dotValue = lo.ToPtr(NewEmptyDotV3())
 	case "v4":
 		dotValue = lo.ToPtr(NewEmptyDotV4())
+	case "v5":
+		dotValue = lo.ToPtr(NewEmptyDotV5())
 	default:
 		panic("unsupported version " + version)
 
