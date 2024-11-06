@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/samber/lo"
 )
 
 type DotV5 struct {
@@ -24,11 +26,11 @@ type V5NextBaseline struct {
 	Count float64 `json:"c"`
 }
 
-func (nb V5NextBaseline) Average() float64 {
+func (nb V5NextBaseline) Average() *float64 {
 	if nb.Count == 0 {
-		return 0.5 // default to 0.5 (hald emotion) in case we're running at a no-data period
+		return nil
 	}
-	return nb.Sum / nb.Count
+	return lo.ToPtr(nb.Sum / nb.Count)
 }
 
 func (nb *V5NextBaseline) Forward(proportions map[string]float64) {
@@ -118,14 +120,20 @@ func (d *DotV5) Forward(timestamp time.Time, sentiments []string) error {
 		d.NextBaseline.Forward(proportions)
 	} else {
 		// compute new baseline from previous baseline (currently called "next"), then reset next
-		avg = d.NextBaseline.Average()
+		maybeAvg := d.NextBaseline.Average()
+		if maybeAvg != nil {
+			avg = *maybeAvg
+		} else {
+			// reuse the last avg if there's no data to compute
+			avg = d.CurrentBaseline.Average
+		}
 
 		// copy avgs over currentBaseline
 		d.CurrentBaseline.Average = avg
 		d.CurrentBaseline.Initialized = true
 		d.CurrentBaseline.Timestamp = timestamp.Unix()
 
-		// we reset the baseline, so shift it around
+		// we reset the baseline, so shift it back to 0.5 (slowly, if network keeps Feeling it it'll stay at high values)
 		if d.D > 0.5 {
 			d.D -= 0.08
 		} else {
