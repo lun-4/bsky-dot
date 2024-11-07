@@ -29,11 +29,13 @@ import (
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/enescakir/emoji"
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
 	"gorgonia.org/tensor"
 
+	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -124,6 +126,7 @@ type State struct {
 	insertedCounter  LockedInt
 	ctx              context.Context
 	db               *sql.DB
+	metricsCounter   *prometheus.CounterVec
 }
 
 func (s *State) PrintState() {
@@ -169,6 +172,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 
 	rsc := &events.RepoStreamCallbacks{
 		RepoCommit: func(evt *atproto.SyncSubscribeRepos_Commit) error {
+			state.metricsCounter.With(prometheus.Labels{"type": "incoming"}).Inc()
 			state.incomingCounter.Incr()
 
 			rr, err := repo.ReadRepoFromCar(state.ctx, bytes.NewReader(evt.Blocks))
@@ -235,6 +239,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
 
+						state.metricsCounter.With(prometheus.Labels{"type": "filtered"}).Inc()
 						state.filteredCounter.Incr()
 						eventChannel <- Post{text: postText, hash: textHash}
 					} else {
@@ -299,6 +304,7 @@ func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 
 		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
 		//sentimentChannel <- sentiment
+		state.metricsCounter.With(prometheus.Labels{"type": "sentiment"}).Inc()
 		state.sentimentCounter.Incr()
 	}
 }
@@ -324,6 +330,7 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 			eventChannel <- post
 			continue
 		}
+		state.metricsCounter.With(prometheus.Labels{"type": "sentiment"}).Inc()
 		state.sentimentCounter.Incr()
 
 		func() {
@@ -347,6 +354,7 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 
 		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
 		//sentimentChannel <- sentiment
+		state.metricsCounter.With(prometheus.Labels{"type": "inserted"}).Inc()
 		state.insertedCounter.Incr()
 	}
 }
@@ -841,7 +849,20 @@ func run(state *State, cfg Config) {
 	})
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(echoprometheus.NewMiddleware("bskydot"))
 
+	state.metricsCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "event_count",
+			Help: "event counters",
+		},
+		[]string{"type"},
+	)
+	if err := prometheus.Register(state.metricsCounter); err != nil { // register your new counter metric with default metrics registry
+		log.Fatal(err)
+	}
+
+	e.GET("/metrics", echoprometheus.NewHandler())
 	e.GET("/", hello)
 	slog.Info("Starting server", slog.String("port", cfg.httpPort))
 	e.Logger.Fatal(e.Start(":" + cfg.httpPort))
