@@ -247,8 +247,9 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 }
 
 type Post struct {
-	text string
-	hash string
+	text         string
+	hash         string
+	retryCounter int
 }
 
 func eventProcessor(state *State, eventChannel chan Post, upstreamUrl string) {
@@ -305,11 +306,18 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 	newCfg.embeddingUrl = upstreamUrl
 	for {
 		post := <-eventChannel
+		if post.retryCounter > 5 {
+			slog.Error("retrying too many times, giving up on processing this post..",
+				slog.Int("retryCounter", post.retryCounter), slog.String("hash", post.hash), slog.String("text", post.text))
+			continue
+		}
 		slog.Debug("processing event", slog.String("text", post.text))
 		sentiment, err := sentimentFromText_V3(newCfg, post.text)
 		if err != nil {
-			slog.Error("an error happened while sending post to sentiment worker, resubmitting in 10ms..", slog.String("error", err.Error()))
+			slog.Error("an error happened while sending post to sentiment worker, resubmitting in 10ms..",
+				slog.String("error", err.Error()), slog.String("hash", post.hash), slog.String("text", post.text))
 			time.Sleep(10 * time.Millisecond)
+			post.retryCounter++
 			eventChannel <- post
 			continue
 		}
