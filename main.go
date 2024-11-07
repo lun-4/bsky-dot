@@ -86,6 +86,12 @@ type LockedInt struct {
 	ui  uint
 }
 
+func (li *LockedInt) Incr() {
+	li.Lock()
+	defer li.Unlock()
+	li.ui++
+}
+
 func (li *LockedInt) Lock() {
 	li.mut.Lock()
 }
@@ -113,8 +119,9 @@ func (li *LockedInt) Reset() uint {
 type State struct {
 	cfg              Config
 	incomingCounter  LockedInt
-	processedCounter LockedInt
-	postCounter      LockedInt
+	filteredCounter  LockedInt
+	sentimentCounter LockedInt
+	insertedCounter  LockedInt
 	ctx              context.Context
 	db               *sql.DB
 }
@@ -122,8 +129,9 @@ type State struct {
 func (s *State) PrintState() {
 	slog.Info("current state, attempting to lock ints")
 	slog.Info("  incoming", slog.Any("count", s.incomingCounter.LockAndGet()))
-	slog.Info("  processed", slog.Any("count", s.processedCounter.LockAndGet()))
-	slog.Info("  posts", slog.Any("count", s.postCounter.LockAndGet()))
+	slog.Info("  sentiment", slog.Any("count", s.sentimentCounter.LockAndGet()))
+	slog.Info("  filtered", slog.Any("count", s.filteredCounter.LockAndGet()))
+	slog.Info("  inserted", slog.Any("count", s.insertedCounter.LockAndGet()))
 }
 
 func eventMetrics(state *State, eventChan chan Post) {
@@ -133,14 +141,21 @@ func eventMetrics(state *State, eventChan chan Post) {
 
 		func() {
 			incoming := state.incomingCounter.Reset()
-			processed := state.processedCounter.Reset()
-			posts := state.postCounter.Reset()
+			filtered := state.filteredCounter.Reset()
+			sentiment := state.sentimentCounter.Reset()
+			inserted := state.insertedCounter.Reset()
+
 			events := len(eventChan)
 			if events > 999 {
 				slog.Warn("too many events! system is bottlenecked..", slog.Int("events", events))
 			}
-			log.Printf("%d from upstream, %d posts, %d processed events a second (channel len %d)",
-				incoming, posts, processed, events)
+			slog.Info("counters per second",
+				slog.Uint64("incoming", uint64(incoming)),
+				slog.Uint64("filtered", uint64(filtered)),
+				slog.Uint64("sentiment", uint64(sentiment)),
+				slog.Uint64("inserted", uint64(inserted)),
+				slog.Int("eventChannel", len(eventChan)),
+			)
 		}()
 	}
 }
@@ -154,11 +169,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 
 	rsc := &events.RepoStreamCallbacks{
 		RepoCommit: func(evt *atproto.SyncSubscribeRepos_Commit) error {
-			func() {
-				state.incomingCounter.Lock()
-				defer state.incomingCounter.Unlock()
-				state.incomingCounter.ui++
-			}()
+			state.incomingCounter.Incr()
 
 			rr, err := repo.ReadRepoFromCar(state.ctx, bytes.NewReader(evt.Blocks))
 			if err != nil {
@@ -224,11 +235,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
 
-						func() {
-							state.postCounter.Lock()
-							defer state.postCounter.Unlock()
-							state.postCounter.ui++
-						}()
+						state.filteredCounter.Incr()
 						eventChannel <- Post{text: postText, hash: textHash}
 					} else {
 						slog.Error("invalid event. expected a text field...", slog.Any("record", rec), slog.Any("text?", rec["text"]))
@@ -292,11 +299,7 @@ func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 
 		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
 		//sentimentChannel <- sentiment
-		func() {
-			state.processedCounter.Lock()
-			defer state.processedCounter.Unlock()
-			state.processedCounter.ui++
-		}()
+		state.sentimentCounter.Incr()
 	}
 }
 
@@ -321,6 +324,7 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 			eventChannel <- post
 			continue
 		}
+		state.sentimentCounter.Incr()
 
 		func() {
 			tx, err := state.db.Begin()
@@ -343,11 +347,7 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 
 		// TODO maybe bring sentimentChannel back so that dotProcessor doesn't need to execute db queries on every tick...??
 		//sentimentChannel <- sentiment
-		func() {
-			state.processedCounter.Lock()
-			defer state.processedCounter.Unlock()
-			state.processedCounter.ui++
-		}()
+		state.insertedCounter.Incr()
 	}
 }
 
