@@ -119,14 +119,15 @@ func (li *LockedInt) Reset() uint {
 }
 
 type State struct {
-	cfg              Config
-	incomingCounter  LockedInt
-	filteredCounter  LockedInt
-	sentimentCounter LockedInt
-	insertedCounter  LockedInt
-	ctx              context.Context
-	db               *sql.DB
-	metricsCounter   *prometheus.CounterVec
+	cfg                    Config
+	incomingCounter        LockedInt
+	filteredCounter        LockedInt
+	sentimentCounter       LockedInt
+	insertedCounter        LockedInt
+	ctx                    context.Context
+	db                     *sql.DB
+	metricsCounter         *prometheus.CounterVec
+	upstreamMetricsCounter *prometheus.CounterVec
 }
 
 func (s *State) PrintState() {
@@ -192,6 +193,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 					return nil
 				}
 
+				state.upstreamMetricsCounter.With(prometheus.Labels{"type": recordType}).Inc()
 				switch recordType {
 				case "app.bsky.feed.post":
 
@@ -204,7 +206,6 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 					if err != nil {
 						return nil
 					}
-					state.metricsCounter.With(prometheus.Labels{"type": "unfiltered_posts"}).Inc()
 
 					slog.Debug("event", slog.String("text", string(recJSON)))
 					// ignore non-english to prevent model crashes
@@ -861,6 +862,16 @@ func run(state *State, cfg Config) {
 		[]string{"type"},
 	)
 	if err := prometheus.Register(state.metricsCounter); err != nil { // register your new counter metric with default metrics registry
+		log.Fatal(err)
+	}
+	state.upstreamMetricsCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "upstream_event_count",
+			Help: "event counters from upstream platform OR network", // :^)
+		},
+		[]string{"type"},
+	)
+	if err := prometheus.Register(state.upstreamMetricsCounter); err != nil { // register your new counter metric with default metrics registry
 		log.Fatal(err)
 	}
 
