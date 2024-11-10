@@ -204,6 +204,8 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 					if err != nil {
 						return nil
 					}
+					state.metricsCounter.With(prometheus.Labels{"type": "unfiltered_posts"}).Inc()
+
 					slog.Debug("event", slog.String("text", string(recJSON)))
 					// ignore non-english to prevent model crashes
 					if rec["langs"] != nil {
