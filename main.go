@@ -499,6 +499,10 @@ func validateEmbeddingModel(cfg Config) {
 	} else {
 		url = cfg.embeddingUrl
 	}
+	if strings.Contains(url, ";") {
+		parts := strings.Split(url, ";")
+		url = parts[0]
+	}
 	req, err := http.NewRequest("GET", url+"/v1/models", nil)
 	if err != nil {
 		panic(err)
