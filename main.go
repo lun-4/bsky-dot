@@ -168,7 +168,8 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
 	if err != nil {
-		panic(err)
+		errorChannel <- err
+		return
 	}
 
 	rsc := &events.RepoStreamCallbacks{
