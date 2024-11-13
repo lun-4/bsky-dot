@@ -127,6 +127,8 @@ type State struct {
 	ctx                    context.Context
 	db                     *sql.DB
 	metricsCounter         *prometheus.CounterVec
+	workerCounter          *prometheus.CounterVec
+	eventGauge             prometheus.Gauge
 	upstreamMetricsCounter *prometheus.CounterVec
 }
 
@@ -148,6 +150,8 @@ func eventMetrics(state *State, eventChan chan Post) {
 			filtered := state.filteredCounter.Reset()
 			sentiment := state.sentimentCounter.Reset()
 			inserted := state.insertedCounter.Reset()
+
+			state.eventGauge.Set(float64(len(eventChan)))
 
 			events := len(eventChan)
 			if events > 999 {
@@ -319,6 +323,7 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 	newCfg.embeddingUrl = upstreamUrl
 	for {
 		post := <-eventChannel
+		state.workerCounter.With(prometheus.Labels{"url": upstreamUrl}).Inc()
 		if post.retryCounter > 5 {
 			slog.Error("retrying too many times, giving up on processing this post..",
 				slog.Int("retryCounter", post.retryCounter), slog.String("hash", post.hash), slog.String("text", post.text))
@@ -887,6 +892,26 @@ func run(state *State, cfg Config) {
 		[]string{"type"},
 	)
 	if err := prometheus.Register(state.upstreamMetricsCounter); err != nil { // register your new counter metric with default metrics registry
+		log.Fatal(err)
+	}
+	state.workerCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "worker_event_count",
+			Help: "event counters from workers",
+		},
+		[]string{"url"},
+	)
+	if err := prometheus.Register(state.workerCounter); err != nil {
+		log.Fatal(err)
+	}
+
+	state.eventGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "event_channel_gauge",
+			Help: "amount of messages in the main event channel",
+		},
+	)
+	if err := prometheus.Register(state.eventGauge); err != nil {
 		log.Fatal(err)
 	}
 
