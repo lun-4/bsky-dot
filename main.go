@@ -835,8 +835,22 @@ func run(state *State, cfg Config) {
 		urls = append(urls, cfg.embeddingUrl)
 	}
 
-	for _, url := range urls {
-		for idx := range state.cfg.numWorkers {
+	for _, maybeUrl := range urls {
+		var url string
+		var setNumWorkers int
+		if strings.Contains(maybeUrl, ";") {
+			parts := strings.Split(maybeUrl, ";")
+			url = parts[0]
+			numWorkers, err := strconv.Atoi(parts[1])
+			if err != nil {
+				panic(err)
+			}
+			setNumWorkers = numWorkers
+		} else {
+			url = maybeUrl
+			setNumWorkers = int(state.cfg.numWorkers)
+		}
+		for idx := range setNumWorkers {
 			slog.Info("spawn worker", slog.Uint64("index", uint64(idx)), slog.String("url", url))
 			go eventProcessor(state, eventChannel, url)
 		}
