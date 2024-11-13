@@ -129,6 +129,7 @@ type State struct {
 	metricsCounter         *prometheus.CounterVec
 	workerCounter          *prometheus.CounterVec
 	eventGauge             prometheus.Gauge
+	workerGoroutineGauge   *prometheus.GaugeVec
 	upstreamMetricsCounter *prometheus.CounterVec
 }
 
@@ -828,55 +829,7 @@ func upstreamWorker(state *State, eventChannel chan Post) {
 	}
 }
 
-func run(state *State, cfg Config) {
-	eventChannel := make(chan Post, 1000)
-	//sentimentChannel := make(chan string, 1000)
-
-	go upstreamWorker(state, eventChannel)
-
-	go eventMetrics(state, eventChannel)
-	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
-
-	urls := make([]string, 0)
-	if strings.Contains(cfg.embeddingUrl, ",") {
-		urls = strings.Split(cfg.embeddingUrl, ",")
-	} else {
-		urls = append(urls, cfg.embeddingUrl)
-	}
-
-	for _, maybeUrl := range urls {
-		var url string
-		var setNumWorkers int
-		if strings.Contains(maybeUrl, ";") {
-			parts := strings.Split(maybeUrl, ";")
-			url = parts[0]
-			numWorkers, err := strconv.Atoi(parts[1])
-			if err != nil {
-				panic(err)
-			}
-			setNumWorkers = numWorkers
-		} else {
-			url = maybeUrl
-			setNumWorkers = int(state.cfg.numWorkers)
-		}
-		for idx := range setNumWorkers {
-			slog.Info("spawn worker", slog.Uint64("index", uint64(idx)), slog.String("url", url))
-			go eventProcessor(state, eventChannel, url)
-		}
-	}
-	go dotProcessor_V2(state, CURRENT_DOT_VERSION)
-
-	e := echo.New()
-
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			cc := &CustomContext{c, state}
-			return next(cc)
-		}
-	})
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-	e.Use(echoprometheus.NewMiddleware("bskydot"))
+func (state *State) RegisterMetrics() {
 
 	state.metricsCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -918,6 +871,69 @@ func run(state *State, cfg Config) {
 	if err := prometheus.Register(state.eventGauge); err != nil {
 		log.Fatal(err)
 	}
+	state.workerGoroutineGauge = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "worker_goroutine_gauge",
+			Help: "amount of goroutines per worker",
+		},
+		[]string{"url"},
+	)
+	if err := prometheus.Register(state.workerGoroutineGauge); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run(state *State, cfg Config) {
+	eventChannel := make(chan Post, 1000)
+	//sentimentChannel := make(chan string, 1000)
+
+	state.RegisterMetrics()
+	go upstreamWorker(state, eventChannel)
+
+	go eventMetrics(state, eventChannel)
+	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
+
+	urls := make([]string, 0)
+	if strings.Contains(cfg.embeddingUrl, ",") {
+		urls = strings.Split(cfg.embeddingUrl, ",")
+	} else {
+		urls = append(urls, cfg.embeddingUrl)
+	}
+
+	for _, maybeUrl := range urls {
+		var url string
+		var setNumWorkers int
+		if strings.Contains(maybeUrl, ";") {
+			parts := strings.Split(maybeUrl, ";")
+			url = parts[0]
+			numWorkers, err := strconv.Atoi(parts[1])
+			if err != nil {
+				panic(err)
+			}
+			setNumWorkers = numWorkers
+		} else {
+			url = maybeUrl
+			setNumWorkers = int(state.cfg.numWorkers)
+		}
+		state.workerGoroutineGauge.With(prometheus.Labels{"url": url}).Set(float64(setNumWorkers))
+		for idx := range setNumWorkers {
+			slog.Info("spawn worker", slog.Uint64("index", uint64(idx)), slog.String("url", url))
+			go eventProcessor(state, eventChannel, url)
+		}
+	}
+	go dotProcessor_V2(state, CURRENT_DOT_VERSION)
+
+	e := echo.New()
+
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			cc := &CustomContext{c, state}
+			return next(cc)
+		}
+	})
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+	e.Use(echoprometheus.NewMiddleware("bskydot"))
 
 	e.GET("/metrics", echoprometheus.NewHandler())
 	e.GET("/", hello)
