@@ -124,6 +124,7 @@ type State struct {
 	filteredCounter        LockedInt
 	sentimentCounter       LockedInt
 	insertedCounter        LockedInt
+	TxMutex                sync.Mutex
 	ctx                    context.Context
 	db                     *sql.DB
 	metricsCounter         *prometheus.CounterVec
@@ -344,6 +345,8 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 		state.sentimentCounter.Incr()
 
 		func() {
+			state.TxMutex.Lock()
+			defer state.TxMutex.Unlock()
 			tx, err := state.db.Begin()
 			defer tx.Commit()
 			if err != nil {
@@ -419,7 +422,7 @@ func main() {
 	log.SetOutput(wrt)
 
 	ctx := context.Background()
-	db, err := sql.Open("sqlite3", cfg.databasePath)
+	db, err := sql.Open("sqlite3", cfg.databasePath+"?_txlock=immediate")
 	if err != nil {
 		log.Fatal(err)
 	}
