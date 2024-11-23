@@ -59,14 +59,15 @@ func upstreamTypeFromString(s string) UpstreamType {
 }
 
 type Config struct {
-	databasePath     string
-	upstreamType     UpstreamType
-	httpPort         string
-	embeddingUrl     string
-	embeddingToken   string
-	embeddingVersion string
-	debug            bool
-	numWorkers       uint
+	databasePath      string
+	upstreamType      UpstreamType
+	httpPort          string
+	embeddingUrl      string
+	embeddingToken    string
+	embeddingVersion  string
+	debug             bool
+	numWorkers        uint
+	maxPostsPerSecond uint
 }
 
 const DEFAULT_DATABASE_PATH = "./dot.db"
@@ -124,6 +125,7 @@ type State struct {
 	filteredCounter        LockedInt
 	sentimentCounter       LockedInt
 	insertedCounter        LockedInt
+	limiterCounter         LockedInt
 	TxMutex                sync.Mutex
 	ctx                    context.Context
 	db                     *sql.DB
@@ -152,6 +154,7 @@ func eventMetrics(state *State, eventChan chan Post) {
 			filtered := state.filteredCounter.Reset()
 			sentiment := state.sentimentCounter.Reset()
 			inserted := state.insertedCounter.Reset()
+			limiter := state.limiterCounter.Reset()
 
 			state.eventGauge.Set(float64(len(eventChan)))
 
@@ -164,6 +167,7 @@ func eventMetrics(state *State, eventChan chan Post) {
 				slog.Uint64("filtered", uint64(filtered)),
 				slog.Uint64("sentiment", uint64(sentiment)),
 				slog.Uint64("inserted", uint64(inserted)),
+				slog.Uint64("limited", uint64(limiter)),
 				slog.Int("eventChannel", len(eventChan)),
 			)
 		}()
@@ -245,6 +249,12 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 						if ratio < 0.3 {
 							return nil
 						}
+
+						if state.limiterCounter.LockAndGet() > state.cfg.maxPostsPerSecond {
+							return nil
+						}
+
+						state.limiterCounter.Incr()
 
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
@@ -394,14 +404,15 @@ func getEnvUint(key string, defaultValue uint) uint {
 
 func main() {
 	cfg := Config{
-		databasePath:     os.Getenv("DATABASE_PATH"),
-		upstreamType:     upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
-		httpPort:         os.Getenv("HTTP_PORT"),
-		debug:            os.Getenv("DEBUG") != "",
-		embeddingUrl:     os.Getenv("LLAMACPP_EMBEDDING_URL"),
-		embeddingToken:   os.Getenv("AUTH_TOKEN"),
-		embeddingVersion: "v3",
-		numWorkers:       getEnvUint("NUM_WORKERS", 3),
+		databasePath:      os.Getenv("DATABASE_PATH"),
+		upstreamType:      upstreamTypeFromString(os.Getenv("UPSTREAM_TYPE")),
+		httpPort:          os.Getenv("HTTP_PORT"),
+		debug:             os.Getenv("DEBUG") != "",
+		embeddingUrl:      os.Getenv("LLAMACPP_EMBEDDING_URL"),
+		embeddingToken:    os.Getenv("AUTH_TOKEN"),
+		embeddingVersion:  "v3",
+		numWorkers:        getEnvUint("NUM_WORKERS", 3),
+		maxPostsPerSecond: getEnvUint("MAX_POSTS_PER_SECOND", 100000000),
 	}
 	cfg.Defaults()
 	if len(os.Args) < 2 {
