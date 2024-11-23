@@ -223,8 +223,8 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 					if rec["langs"] != nil {
 						langs := rec["langs"].([]any)
 						if len(langs) > 0 {
-							primaryLang := langs[0].(string)
-							if primaryLang != "en" {
+							primaryLang, ok := langs[0].(string)
+							if !ok || primaryLang != "en" {
 								return nil
 							}
 						}
