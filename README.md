@@ -12,6 +12,7 @@ https://dot.bsky.ln4.net
   - if there's less sentiment (e.g higher neutral proportion, model gives positive/negative/neutral), dot value decreases
   - works via proportion so if there's more posts or less posts, it doesn't matter
   - every hour it resets its concept of "average" emotion so that it doesn't collapse to 1 or 0, it'll always try to push itself to 0.5, making for a funnier graph
+  - its possible the current dot algorithm isnt even good!! it's a lot of trial-and-error for these things
 
 ## how
 
@@ -21,6 +22,7 @@ https://dot.bsky.ln4.net
   - in example, a.com, b.com, c.com run the sentiment worker
   - b.com runs gpu so it can do a lot more (in this case, 100 sentiments at the same time)
   - im currently running some 10 VPSes on hetzner/scaleway plus my RTX4060, but i want to downscale things to remove the cost (and so my gpu is free for other projects, good thing i dont have other projects that need it at the moment :D)
+  - in the future i want to bring it down to some 5 CPU nodes, and sample firehose down to 30~40posts/second. that should make it good enough i can just drop 20USD/mo in the project (the maximum amount i'm fine with spending on this sort of joke)
 
 ### running main service
 
