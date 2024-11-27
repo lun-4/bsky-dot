@@ -38,7 +38,13 @@ go run . run
 
 ```sh
 python3 -m venv env
+
+# if CPU:
 env/bin/pip install torch==2.5.1+cpu torchvision==0.20.1+cpu torchaudio==2.5.1+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# if GPU:
+env/bin/pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
+
 env/bin/pip install -Ur testrunner-requirements.txt
 export AUTH_TOKEN=AAAAAAAAAAAAAAAAAAAAA
 env/bin/flask --app testrunner run --host 0.0.0.0 --port 4000
