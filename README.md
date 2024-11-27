@@ -22,7 +22,7 @@ https://dot.bsky.ln4.net
   - in example, a.com, b.com, c.com run the sentiment worker
   - b.com runs gpu so it can do a lot more (in this case, 100 sentiments at the same time)
   - im currently running some 10 VPSes on hetzner/scaleway plus my RTX4060, but i want to downscale things to remove the cost (and so my gpu is free for other projects, good thing i dont have other projects that need it at the moment :D)
-  - in the future i want to bring it down to some 5 CPU nodes, and sample firehose down to 30~40posts/second. that should make it good enough i can just drop 20USD/mo in the project (the maximum amount i'm fine with spending on this sort of joke)
+  - in the future i want to bring it down to some 5 CPU nodes, and sample firehose down to 30~40posts/second. that should make it good enough i can just drop 20USD/mo in the project (the maximum amount i'm fine with spending on this sort of high-effort shitpost)
 
 ### running main service
 
