@@ -9,7 +9,7 @@ https://dot.bsky.ln4.net
 - store data for "dot" analysis
   - current algorithm is dot_v5.go, tldr is
   - if there's more sentiment (either positive or negative!), the dot value increases
-  - if there's less sentiment, dot value decreases
+  - if there's less sentiment (e.g higher neutral proportion, model gives positive/negative/neutral), dot value decreases
   - works via proportion so if there's more posts or less posts, it doesn't matter
   - every hour it resets its concept of "average" emotion so that it doesn't collapse to 1 or 0, it'll always try to push itself to 0.5, making for a funnier graph
 
