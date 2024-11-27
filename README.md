@@ -20,6 +20,7 @@ https://dot.bsky.ln4.net
   - atm you need enough compute to run firehose at line rate (as of Nov 2024, ~80 posts a second). i want to see if i can reduce compute needs by sampling from firehose
   - in example, a.com, b.com, c.com run the sentiment worker
   - b.com runs gpu so it can do a lot more (in this case, 100 sentiments at the same time)
+  - im currently running some 10 VPSes on hetzner/scaleway plus my RTX4060, but i want to downscale things to remove the cost (and so my gpu is free for other projects, good thing i dont have other projects that need it at the moment :D)
 
 ### running main service
 
