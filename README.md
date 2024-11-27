@@ -10,12 +10,13 @@ https://dot.bsky.ln4.net
   - current algorithm is dot_v5.go, tldr is
   - if there's more sentiment (either positive or negative!), the dot value increases
   - if there's less sentiment, dot value decreases
-  - works via proportion
+  - works via proportion so if there's more posts or less posts, it doesn't matter
 
 ## how
 
 - one server runs firehose, processes data, etc
 - multiple servers run sentiment analysis (either one with a gpu, or multiple with cpu)
+  - atm you need enough compute to run firehose at line rate (as of Nov 2024, ~80 posts a second). i want to see if i can reduce compute needs by sampling from firehose
   - in example, a.com, b.com, c.com run the sentiment worker
   - b.com runs gpu so it can do a lot more (in this case, 100 sentiments at the same time)
 
