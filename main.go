@@ -864,9 +864,9 @@ func upstreamWorker(state *State, eventChannel chan Post, restartChannel chan bo
 		case <-restartChannel:
 			slog.Error("restart requested! force exit")
 			exitChannel <- true
-			slog.Error("sleeping for 5 seconds before restart")
-			time.Sleep(5 * time.Second)
 		}
+		slog.Error("sleeping for 5 seconds before restart")
+		time.Sleep(5 * time.Second)
 	}
 }
 
