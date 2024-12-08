@@ -144,8 +144,9 @@ func (s *State) PrintState() {
 	slog.Info("  inserted", slog.Any("count", s.insertedCounter.LockAndGet()))
 }
 
-func eventMetrics(state *State, eventChan chan Post) {
+func eventMetrics(state *State, eventChan chan Post, restartChannel chan bool) {
 	ticker := time.Tick(time.Second * 1)
+	zeroCounter := 0
 	for {
 		<-ticker
 
@@ -158,6 +159,17 @@ func eventMetrics(state *State, eventChan chan Post) {
 
 			state.eventGauge.Set(float64(len(eventChan)))
 
+			if zeroCounter > 20 {
+				slog.Warn("restarting!!!", slog.Int("count", zeroCounter))
+				restartChannel <- true
+			}
+			if incoming == 0 {
+				slog.Warn("zero events", slog.Int("count", zeroCounter))
+				zeroCounter++
+			} else {
+				zeroCounter = 0
+			}
+
 			events := len(eventChan)
 			if events > 999 {
 				slog.Warn("too many events! system is bottlenecked..", slog.Int("events", events))
@@ -169,18 +181,20 @@ func eventMetrics(state *State, eventChan chan Post) {
 				slog.Uint64("inserted", uint64(inserted)),
 				slog.Uint64("limited", uint64(limiter)),
 				slog.Int("eventChannel", len(eventChan)),
+				slog.Int("restartChannel", len(restartChannel)),
 			)
 		}()
 	}
 }
 
-func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan error) {
+func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan error, exitChannel chan bool) {
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
 	if err != nil {
 		errorChannel <- err
 		return
 	}
+	defer con.Close()
 
 	rsc := &events.RepoStreamCallbacks{
 		RepoCommit: func(evt *atproto.SyncSubscribeRepos_Commit) error {
@@ -273,9 +287,14 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 			return nil
 		},
 	}
-	sched := sequential.NewScheduler("myfirehose", rsc.EventHandler)
-	err = events.HandleRepoStream(state.ctx, con, sched)
-	errorChannel <- err
+	go func() {
+		sched := sequential.NewScheduler("myfirehose", rsc.EventHandler)
+		sched.Shutdown()
+		err = events.HandleRepoStream(state.ctx, con, sched)
+		errorChannel <- err
+		exitChannel <- true
+	}()
+	<-exitChannel
 }
 
 type Post struct {
@@ -828,18 +847,26 @@ func (c *CustomContext) State() *State {
 	return c.state
 }
 
-func upstreamWorker(state *State, eventChannel chan Post) {
+func upstreamWorker(state *State, eventChannel chan Post, restartChannel chan bool) {
 	errorChannel := make(chan error, 1)
+	exitChannel := make(chan bool, 1)
 	for {
 		switch state.cfg.upstreamType {
 		case UpstreamType_BLUESKY:
-			go blueskyUpstream(state, eventChannel, errorChannel)
+			go blueskyUpstream(state, eventChannel, errorChannel, exitChannel)
 		default:
 			panic("unsupported upstream type. this is a bug")
 		}
 
-		err := <-errorChannel
-		slog.Error("upstream worker failed, restarting", slog.String("err", err.Error()))
+		select {
+		case err := <-errorChannel:
+			slog.Error("upstream worker failed, restarting", slog.String("err", err.Error()))
+		case <-restartChannel:
+			slog.Error("restart requested! force exit")
+			exitChannel <- true
+			slog.Error("sleeping for 5 seconds before restart")
+			time.Sleep(5 * time.Second)
+		}
 	}
 }
 
@@ -899,12 +926,13 @@ func (state *State) RegisterMetrics() {
 
 func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
+	restartChannel := make(chan bool, 1000)
 	//sentimentChannel := make(chan string, 1000)
 
 	state.RegisterMetrics()
-	go upstreamWorker(state, eventChannel)
+	go upstreamWorker(state, eventChannel, restartChannel)
 
-	go eventMetrics(state, eventChannel)
+	go eventMetrics(state, eventChannel, restartChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
 
 	urls := make([]string, 0)
