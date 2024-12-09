@@ -191,6 +191,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 	uri := "wss://bsky.network/xrpc/com.atproto.sync.subscribeRepos"
 	con, _, err := websocket.DefaultDialer.Dial(uri, http.Header{})
 	if err != nil {
+		slog.Error("error while dialing to websocket", slog.String("err", err.Error()))
 		errorChannel <- err
 		return
 	}
@@ -291,6 +292,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 		sched := sequential.NewScheduler("myfirehose", rsc.EventHandler)
 		sched.Shutdown()
 		err = events.HandleRepoStream(state.ctx, con, sched)
+		slog.Error("error while handling repo stream", slog.String("err", err.Error()))
 		errorChannel <- err
 		exitChannel <- true
 	}()
