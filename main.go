@@ -125,7 +125,6 @@ type State struct {
 	filteredCounter        LockedInt
 	sentimentCounter       LockedInt
 	insertedCounter        LockedInt
-	limiterCounter         LockedInt
 	TxMutex                sync.Mutex
 	ctx                    context.Context
 	db                     *sql.DB
@@ -155,7 +154,6 @@ func eventMetrics(state *State, eventChan chan Post, restartChannel chan bool) {
 			filtered := state.filteredCounter.Reset()
 			sentiment := state.sentimentCounter.Reset()
 			inserted := state.insertedCounter.Reset()
-			limiter := state.limiterCounter.Reset()
 
 			state.eventGauge.Set(float64(len(eventChan)))
 
@@ -179,7 +177,6 @@ func eventMetrics(state *State, eventChan chan Post, restartChannel chan bool) {
 				slog.Uint64("filtered", uint64(filtered)),
 				slog.Uint64("sentiment", uint64(sentiment)),
 				slog.Uint64("inserted", uint64(inserted)),
-				slog.Uint64("limited", uint64(limiter)),
 				slog.Int("eventChannel", len(eventChan)),
 				slog.Int("restartChannel", len(restartChannel)),
 			)
@@ -264,12 +261,6 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 						if ratio < 0.3 {
 							return nil
 						}
-
-						if state.limiterCounter.LockAndGet() > state.cfg.maxPostsPerSecond {
-							return nil
-						}
-
-						state.limiterCounter.Incr()
 
 						textHashBytes := md5.Sum([]byte(postText))
 						textHash := hex.EncodeToString(textHashBytes[:])
@@ -926,15 +917,66 @@ func (state *State) RegisterMetrics() {
 	}
 }
 
+func (state *State) samplePosts(posts []Post) []Post {
+	sampleSize := int(state.cfg.maxPostsPerSecond)
+	if sampleSize == 0 && len(posts) > 0 {
+		sampleSize = 1
+	}
+
+	if sampleSize >= len(posts) {
+		return posts
+	}
+
+	// Create indexes and shuffle them
+	indexes := make([]int, len(posts))
+	for i := range indexes {
+		indexes[i] = i
+	}
+	rand.Shuffle(len(indexes), func(i, j int) {
+		indexes[i], indexes[j] = indexes[j], indexes[i]
+	})
+
+	// Take first sampleSize posts using shuffled indexes
+	sampled := make([]Post, sampleSize)
+	for i := 0; i < sampleSize; i++ {
+		sampled[i] = posts[indexes[i]]
+	}
+
+	return sampled
+}
+
+func eventSampler(state *State, eventChannel <-chan Post, outputEventChannel chan Post) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	buffer := make([]Post, 0)
+
+	for {
+		select {
+		case post := <-eventChannel:
+			buffer = append(buffer, post)
+
+		case <-ticker.C:
+			if len(buffer) > 0 {
+				sampled := state.samplePosts(buffer)
+				for _, post := range sampled {
+					outputEventChannel <- post
+				}
+				buffer = make([]Post, 0, 1000)
+			}
+		}
+	}
+}
+
 func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
+	sampledEventChannel := make(chan Post, 1000)
 	restartChannel := make(chan bool, 1000)
-	//sentimentChannel := make(chan string, 1000)
 
 	state.RegisterMetrics()
 	go upstreamWorker(state, eventChannel, restartChannel)
-
-	go eventMetrics(state, eventChannel, restartChannel)
+	go eventSampler(state, eventChannel, sampledEventChannel)
+	go eventMetrics(state, sampledEventChannel, restartChannel)
 	slog.Info("event processors", slog.Uint64("workers", uint64(state.cfg.numWorkers)))
 
 	urls := make([]string, 0)
@@ -962,7 +1004,7 @@ func run(state *State, cfg Config) {
 		state.workerGoroutineGauge.With(prometheus.Labels{"url": url}).Set(float64(setNumWorkers))
 		for idx := range setNumWorkers {
 			slog.Info("spawn worker", slog.Uint64("index", uint64(idx)), slog.String("url", url))
-			go eventProcessor(state, eventChannel, url)
+			go eventProcessor(state, sampledEventChannel, url)
 		}
 	}
 	go dotProcessor_V2(state, CURRENT_DOT_VERSION)
