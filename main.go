@@ -434,7 +434,7 @@ func main() {
 	if cfg.debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
-	f, err := os.OpenFile("dot.log?_txlock=immediate", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile("dot.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
