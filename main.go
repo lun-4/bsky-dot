@@ -281,7 +281,7 @@ func blueskyUpstream(state *State, eventChannel chan Post, errorChannel chan err
 	}
 	go func() {
 		sched := sequential.NewScheduler("myfirehose", rsc.EventHandler)
-		sched.Shutdown()
+		defer sched.Shutdown()
 		err = events.HandleRepoStream(state.ctx, con, sched)
 		slog.Error("error while handling repo stream", slog.String("err", err.Error()))
 		errorChannel <- err
