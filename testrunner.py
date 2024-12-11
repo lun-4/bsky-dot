@@ -69,18 +69,19 @@ def _old(j):
 
 @app.post("/api/v1/sentiment")
 def compute_sentiment():
-    try:
-        auth_value = request.headers["Authorization"]
-    except KeyError:
-        return "unauthorized (missing token)", 401
+    if auth_token:
+        try:
+            auth_value = request.headers["Authorization"]
+        except KeyError:
+            return "unauthorized (missing token)", 401
 
-    if not auth_value.startswith("Bearer "):
-        return "unauthorized (not bearer token)", 401
+        if not auth_value.startswith("Bearer "):
+            return "unauthorized (not bearer token)", 401
 
-    auth_given_token = auth_value.lstrip("Bearer ")
-    if auth_token and auth_given_token != auth_token:
-        print(auth_given_token, "!=", auth_token)
-        return "unauthorized (invalid token)", 401
+        auth_given_token = auth_value.lstrip("Bearer ")
+        if auth_token and auth_given_token != auth_token:
+            print(auth_given_token, "!=", auth_token)
+            return "unauthorized (invalid token)", 401
 
     j = request.get_json()
     print(j["text"])
