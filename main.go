@@ -356,9 +356,10 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 		slog.Debug("processing event", slog.String("text", post.text))
 		sentiment, err := sentimentFromText_V3(newCfg, post.text)
 		if err != nil {
-			slog.Error("an error happened while sending post to sentiment worker, resubmitting in 10ms..",
-				slog.String("error", err.Error()), slog.String("hash", post.hash), slog.String("text", post.text))
-			time.Sleep(10 * time.Millisecond)
+			retryTime := time.Duration(rand.Intn(50-30+1)+30) * time.Second
+			slog.Error("an error happened while sending post to sentiment worker, resubmitting..",
+				slog.String("url", upstreamUrl), slog.String("error", err.Error()), slog.String("hash", post.hash), slog.String("text", post.text), slog.Int("retry_time", int(retryTime.Seconds())))
+			time.Sleep(retryTime * time.Millisecond)
 			post.retryCounter++
 			eventChannel <- post
 			continue
