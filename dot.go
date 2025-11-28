@@ -389,8 +389,19 @@ func dotBackfill(state *State, version string) {
 	}
 	_, ok := lastDotV2(state, version)
 	if !ok {
-		slog.Warn("no last dot found, new database or failed to create dot data...")
-		//panic("failed to create dot data")
+		slog.Warn("no last dot found even after backfill, inserting an empty dot so that other tasks don't break...")
+		emptyDot := NewEmptyDot(version)
+		wrapped := emptyDot.Serialize()
+		encoded, err := json.Marshal(wrapped)
+		if err != nil {
+			panic(err)
+		}
+
+		_, err = state.db.Exec(`INSERT INTO dot_data (timestamp, dot_analyst, data) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+			startAll.Unix(), dotState.Version(), string(encoded))
+		if err != nil {
+			panic(err)
+		}
 	}
 	slog.Info("dot backfill complete", slog.String("version", version))
 }
