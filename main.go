@@ -143,7 +143,7 @@ func (s *State) PrintState() {
 	slog.Info("  inserted", slog.Any("count", s.insertedCounter.LockAndGet()))
 }
 
-func eventMetrics(state *State, eventChan chan Post, restartChannel chan bool) {
+func eventMetrics(state *State, eventChan chan []Post, restartChannel chan bool) {
 	ticker := time.Tick(time.Second * 1)
 	zeroCounter := 0
 	for {
@@ -296,7 +296,7 @@ type Post struct {
 	retryCounter int
 }
 
-func eventProcessor(state *State, eventChannel chan Post, upstreamUrl string) {
+func eventProcessor(state *State, eventChannel chan []Post, upstreamUrl string) {
 	switch state.cfg.embeddingVersion {
 	case "v1":
 		eventProcessor_V1(state, eventChannel)
@@ -307,11 +307,16 @@ func eventProcessor(state *State, eventChannel chan Post, upstreamUrl string) {
 	}
 }
 
-func eventProcessor_V1(state *State, eventChannel <-chan Post) {
+func eventProcessor_V1(state *State, eventChannel <-chan []Post) {
 	primaryEmbeddings := getPrimaryEmbeddings_V1(state)
-
 	for {
-		post := <-eventChannel
+		posts := <-eventChannel
+		batchProcess_V1(primaryEmbeddings, state, posts)
+	}
+}
+
+func batchProcess_V1(primaryEmbeddings map[string]tensor.Tensor, state *State, posts []Post) {
+	for _, post := range posts {
 		slog.Debug("processing event", slog.String("text", post.text))
 		sentiment := sentimentFromText_V1(state.cfg, post.text, primaryEmbeddings)
 
@@ -341,13 +346,18 @@ func eventProcessor_V1(state *State, eventChannel <-chan Post) {
 	}
 }
 
-func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string) {
-
+func eventProcessor_V3(state *State, eventChannel chan []Post, upstreamUrl string) {
 	newCfg := state.cfg
 	newCfg.embeddingUrl = upstreamUrl
 	for {
-		post := <-eventChannel
-		state.workerCounter.With(prometheus.Labels{"url": upstreamUrl}).Inc()
+		posts := <-eventChannel
+		batchProcess_V3(newCfg, state, posts, eventChannel)
+	}
+}
+
+func batchProcess_V3(newCfg Config, state *State, posts []Post, eventChannel chan []Post) {
+	for _, post := range posts {
+		state.workerCounter.With(prometheus.Labels{"url": newCfg.embeddingUrl}).Inc()
 		if post.retryCounter > 5 {
 			slog.Error("retrying too many times, giving up on processing this post..",
 				slog.Int("retryCounter", post.retryCounter), slog.String("hash", post.hash), slog.String("text", post.text))
@@ -358,10 +368,10 @@ func eventProcessor_V3(state *State, eventChannel chan Post, upstreamUrl string)
 		if err != nil {
 			retryTime := time.Duration(rand.Intn(50-30+1)+30) * time.Second
 			slog.Error("an error happened while sending post to sentiment worker, resubmitting..",
-				slog.String("url", upstreamUrl), slog.String("error", err.Error()), slog.String("hash", post.hash), slog.String("text", post.text), slog.Int("retry_time", int(retryTime.Seconds())))
+				slog.String("url", newCfg.embeddingUrl), slog.String("error", err.Error()), slog.String("hash", post.hash), slog.String("text", post.text), slog.Int("retry_time", int(retryTime.Seconds())))
 			time.Sleep(retryTime * time.Millisecond)
 			post.retryCounter++
-			eventChannel <- post
+			eventChannel <- []Post{post}
 			continue
 		}
 		state.metricsCounter.With(prometheus.Labels{"type": "sentiment"}).Inc()
@@ -946,7 +956,7 @@ func (state *State) samplePosts(posts []Post) []Post {
 	return sampled
 }
 
-func eventSampler(state *State, eventChannel <-chan Post, outputEventChannel chan Post) {
+func eventSampler(state *State, eventChannel <-chan Post, outputEventChannel chan []Post) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -960,9 +970,7 @@ func eventSampler(state *State, eventChannel <-chan Post, outputEventChannel cha
 		case <-ticker.C:
 			if len(buffer) > 0 {
 				sampled := state.samplePosts(buffer)
-				for _, post := range sampled {
-					outputEventChannel <- post
-				}
+				outputEventChannel <- sampled
 				buffer = make([]Post, 0, 1000)
 			}
 		}
@@ -971,7 +979,7 @@ func eventSampler(state *State, eventChannel <-chan Post, outputEventChannel cha
 
 func run(state *State, cfg Config) {
 	eventChannel := make(chan Post, 1000)
-	sampledEventChannel := make(chan Post, 1000)
+	sampledEventChannel := make(chan []Post, 1000)
 	restartChannel := make(chan bool, 1000)
 
 	state.RegisterMetrics()
