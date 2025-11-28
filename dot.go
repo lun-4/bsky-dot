@@ -389,7 +389,8 @@ func dotBackfill(state *State, version string) {
 	}
 	_, ok := lastDotV2(state, version)
 	if !ok {
-		panic("failed to create dot data")
+		slog.Warn("no last dot found, new database or failed to create dot data...")
+		//panic("failed to create dot data")
 	}
 	slog.Info("dot backfill complete", slog.String("version", version))
 }
