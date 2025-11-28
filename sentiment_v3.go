@@ -62,3 +62,49 @@ func sentimentFromText_V3(cfg Config, text string) (string, error) {
 	resLabel := resPredictions[0].(map[string]any)
 	return resLabel["label"].(string), nil
 }
+
+func sentimentFromTextBatch_V3(cfg Config, texts []string) ([]string, error) {
+	client := http.Client{}
+	requestBody := make(map[string]any)
+	requestBody["texts"] = texts
+	requestBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		panic(err)
+	}
+	req, err := http.NewRequest("POST", cfg.embeddingUrl+"/api/v1/sentiment", bytes.NewReader(requestBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.embeddingToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.embeddingToken))
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	responseBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		slog.Error("HTTP error", slog.Int("status", res.StatusCode), slog.String("response", string(responseBytes)))
+		return nil, StatusCodeError{StatusCode: res.StatusCode}
+	}
+
+	var resJson map[string]any
+	err = json.Unmarshal(responseBytes, &resJson)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse response JSON (%v): %v", string(responseBytes), err)
+	}
+	resOutput := resJson["output"].(map[string]any)
+	resPredictions := resOutput["predictions"].([]any)
+
+	results := make([]string, len(resPredictions))
+	for i, pred := range resPredictions {
+		resLabel := pred.(map[string]any)
+		results[i] = resLabel["label"].(string)
+	}
+	return results, nil
+}

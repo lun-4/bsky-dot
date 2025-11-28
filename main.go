@@ -356,6 +356,78 @@ func eventProcessor_V3(state *State, eventChannel chan []Post, upstreamUrl strin
 }
 
 func batchProcess_V3(newCfg Config, state *State, posts []Post, eventChannel chan []Post) {
+	// Filter out posts that have been retried too many times
+	validPosts := make([]Post, 0, len(posts))
+	for _, post := range posts {
+		state.workerCounter.With(prometheus.Labels{"url": newCfg.embeddingUrl}).Inc()
+		if post.retryCounter > 5 {
+			slog.Error("retrying too many times, giving up on processing this post..",
+				slog.Int("retryCounter", post.retryCounter), slog.String("hash", post.hash), slog.String("text", post.text))
+			continue
+		}
+		validPosts = append(validPosts, post)
+	}
+
+	if len(validPosts) == 0 {
+		return
+	}
+
+	// Collect texts for batch processing
+	texts := make([]string, len(validPosts))
+	for i, post := range validPosts {
+		texts[i] = post.text
+		slog.Debug("processing event in batch", slog.String("text", post.text))
+	}
+
+	// Send batch request
+	sentiments, err := sentimentFromTextBatch_V3(newCfg, texts)
+	if err != nil {
+		// If batch fails, resubmit all posts with incremented retry counter
+		retryTime := time.Duration(rand.Intn(50-30+1)+30) * time.Second
+		slog.Error("an error happened while sending batch to sentiment worker, resubmitting all posts..",
+			slog.String("url", newCfg.embeddingUrl), slog.String("error", err.Error()), slog.Int("batch_size", len(validPosts)), slog.Int("retry_time", int(retryTime.Seconds())))
+		time.Sleep(retryTime * time.Millisecond)
+
+		for i := range validPosts {
+			validPosts[i].retryCounter++
+		}
+		eventChannel <- validPosts
+		return
+	}
+
+	// Process results and insert into database
+	for i, post := range validPosts {
+		sentiment := sentiments[i]
+		state.metricsCounter.With(prometheus.Labels{"type": "sentiment"}).Inc()
+		state.sentimentCounter.Incr()
+
+		func() {
+			state.TxMutex.Lock()
+			defer state.TxMutex.Unlock()
+			tx, err := state.db.Begin()
+			defer tx.Commit()
+			if err != nil {
+				panic(err)
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_data (post_hash, post, sentiment_analyst, sentiment_data) VALUES (?, ?, ?, ?)
+			ON CONFLICT DO NOTHING`,
+				post.hash, post.text, "v3", sentiment)
+			if err != nil {
+				slog.Error("error in db insert to sentiment_data", slog.String("err", err.Error()))
+			}
+			_, err = tx.Exec(`INSERT INTO sentiment_events (timestamp, post_hash, sentiment_analyst) VALUES (?, ?, ?)`,
+				time.Now().UnixMilli(), post.hash, "v3")
+			if err != nil {
+				slog.Error("error in db insert", slog.String("err", err.Error()))
+			}
+		}()
+
+		state.metricsCounter.With(prometheus.Labels{"type": "inserted"}).Inc()
+		state.insertedCounter.Incr()
+	}
+}
+
+func batchProcessSerial_V3(newCfg Config, state *State, posts []Post, eventChannel chan []Post) {
 	for _, post := range posts {
 		state.workerCounter.With(prometheus.Labels{"url": newCfg.embeddingUrl}).Inc()
 		if post.retryCounter > 5 {

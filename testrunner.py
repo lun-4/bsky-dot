@@ -84,18 +84,45 @@ def compute_sentiment():
             return "unauthorized (invalid token)", 401
 
     j = request.get_json()
-    print(j["text"])
-    output = sentiment_task(j["text"])
+
+    # Support both single text and batched texts
+    if "texts" in j:
+        # Batch mode
+        texts = j["texts"]
+        is_batch = True
+    elif "text" in j:
+        # Single text mode (backwards compatible)
+        texts = [j["text"]]
+        is_batch = False
+    else:
+        return "missing 'text' or 'texts' field", 400
+
+    print(f"Processing {len(texts)} text(s)")
+
+    # Process all texts in one batch
+    output = sentiment_task(texts)
     print(output)
 
-    max_label, max_score = None, 0
-    for it in output:
-        l, s = it["label"], it["score"]
-        if max_label is None:
-            max_label = l
-            max_score = s
-        if s > max_score:
-            max_label = l
-            max_score = s
+    # Process results - output is a list of results
+    results = []
+    for result in output:
+        # Each result is either a dict or a list of dicts
+        if isinstance(result, list):
+            # If result is a list, find max score
+            max_label, max_score = None, 0
+            for it in result:
+                l, s = it["label"], it["score"]
+                if max_label is None or s > max_score:
+                    max_label = l
+                    max_score = s
+            results.append({"label": max_label, "score": max_score})
+        else:
+            # Single result dict
+            results.append({"label": result["label"], "score": result["score"]})
 
-    return {"output": {"predictions": [{"label": max_label, "score": max_score}]}}
+    if is_batch:
+        # Return array of predictions for batch mode
+        return {"output": {"predictions": results}}
+    else:
+        # Return single prediction for backwards compatibility
+        return {"output": {"predictions": [results[0]]}}
