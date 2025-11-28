@@ -527,6 +527,7 @@ func main() {
 
 	log.SetOutput(wrt)
 
+	slog.Info("cfg", slog.Uint64("maxPostsPerSecond", uint64(cfg.maxPostsPerSecond)), slog.String("httpPort", cfg.httpPort))
 	ctx := context.Background()
 	db, err := sql.Open("sqlite3", cfg.databasePath+"?_txlock=immediate")
 	if err != nil {
